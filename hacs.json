@@ -1,0 +1,6 @@
+{
+  "name": "Tado Heating Manager Cards",
+  "filename": "tado-heating-manager-cards.js",
+  "homeassistant": "2025.6.0",
+  "render_readme": true
+}
