@@ -28,6 +28,8 @@ passa un `hass` finto (`states` + `entities`), con `ha-card`/`ha-icon` finti def
   `sensor.hp_all_rooms` (attributo `rooms`: slug, name, climate, offset_entity...), `switch.hp_all_enabled`,
   `switch.hp_<slug>_enabled`, `sensor.hp_<slug>_current`, `sensor.hp_<slug>_plan` (attributi `wd`/`we`),
   servizi `tado_heating_manager.set_slots` e `set_room_order`.
+  Card della quota: sensori per `translation_key` (`tado_ce_tracked` con `by_type`, `tado_ce_untracked` con il dettaglio
+  per categoria, `api_calls_today`, `tado_ce_offset_services`, `unexplained_calls` con `tado_ce_offset_sync_zones`).
 - Nomi degli elementi invariati rispetto a Heating Planner: le dashboard esistenti non vanno toccate.
 
 ## Pubblicazione (GitHub + HACS)

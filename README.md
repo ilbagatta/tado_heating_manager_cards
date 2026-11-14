@@ -37,7 +37,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.4.2`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.5.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -91,7 +91,7 @@ entities:                 # facoltativo: solo per forzare entita' diverse da que
 
 La card della quota trova da sola i sensori di Tado Heating Manager (qualunque sia il loro entity_id). Chiavi per
 `entities`: `quota_status`, `quota_percent`, `quota_used`, `quota_remaining`, `quota_limit`, `quota_reset`,
-`quota_minutes_to_reset`, `tado_ce_tracked`, `api_calls_today`, `unexplained_calls`. Toccando una riga si apre il
+`quota_minutes_to_reset`, `tado_ce_tracked`, `tado_ce_untracked`, `api_calls_today`, `tado_ce_offset_services`, `unexplained_calls`. Toccando una riga si apre il
 dettaglio dell'entita'.
 
 Le card leggono le entita' dell'integrazione (`sensor.hp_all_rooms`, `switch.hp_<stanza>_enabled`, `sensor.hp_<stanza>_plan`, …)
