@@ -10,7 +10,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.4.0";
+const THM_CARDS_VERSION = "2.4.1";
 console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#fff;background:#ff8a3d;font-weight:600", "color:#ff8a3d");
 
 // ===== heating-planner-card.js =====
@@ -537,7 +537,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           @keyframes ventola-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         </style>
         <ha-card>
-          <div class="icon"><ha-icon icon="mdi:radiator" style="--mdc-icon-size:24px"></ha-icon></div>
+          <div class="icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><rect x="1.4" y="5.2" width="3" height="1.8" rx=".5"/><rect x="1.4" y="17" width="3" height="1.8" rx=".5"/><rect x="3.9" y="3.5" width="2.6" height="17" rx="1.3"/><rect x="7.3" y="3.5" width="2.6" height="17" rx="1.3"/><rect x="10.7" y="3.5" width="2.6" height="17" rx="1.3"/><rect x="14.1" y="3.5" width="2.6" height="17" rx="1.3"/><rect x="17.5" y="3.5" width="2.6" height="17" rx="1.3"/></svg></div>
           <div class="info"><div class="nrow"><div class="name"></div><div class="off"></div></div><div class="line"></div></div>
           <div class="btn flame" data-a="mode"><ha-icon icon="mdi:fire"></ha-icon></div>
           <div class="btn fan" data-a="fan"><ha-icon icon="mdi:fan"></ha-icon></div>
@@ -550,7 +550,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       const $ = (q) => this.shadowRoot.querySelector(q);
       this._card = $("ha-card");
       this._el = {
-        icon: $(".icon ha-icon"),
+        icon: $(".icon svg"),
         iconWrap: $(".icon"),
         name: $(".name"),
         line: $(".line"),
