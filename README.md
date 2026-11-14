@@ -7,13 +7,14 @@ Card Lovelace per l'integrazione **Tado Heating Manager** (`tado_heating_manager
 dipendenze (niente button-card) e senza build.
 
 La card del termosifone e quella del climatizzatore funzionano con qualsiasi entita' `climate`; la card dei programmi
-richiede l'integrazione Tado Heating Manager.
+e quella della quota richiedono l'integrazione Tado Heating Manager.
 
 | Card | Uso |
 |---|---|
 | `custom:heating-planner-card` | Programmi a fasce di tutte le stanze, tab Feriali / Weekend, ordine delle stanze |
 | `custom:heating-radiator-card` | Riga di un termosifone (modo, temperatura, offset, popup con grafico) |
 | `custom:heating-ac-card` | Riga di un climatizzatore |
+| `custom:tado-quota-card` | Quota API Tado: stato, indicatori, provenienza delle chiamate, grafico |
 
 Le card sono separate dall'integrazione: dopo una modifica basta **ricaricare la dashboard**, senza riavviare Home Assistant.
 
@@ -36,7 +37,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.0.1`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.1.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -79,6 +80,19 @@ type: custom:heating-ac-card
 entity: climate.condizionatore_cucina   # obbligatorio
 name: Cucina                            # facoltativo
 ```
+
+```yaml
+type: custom:tado-quota-card
+title: Quota API Tado     # facoltativo
+hours_to_show: 48         # facoltativo: ore del grafico (0 = niente grafico)
+entities:                 # facoltativo: solo per forzare entita' diverse da quelle trovate in automatico
+  quota_status: sensor.xxx
+```
+
+La card della quota trova da sola i sensori di Tado Heating Manager (qualunque sia il loro entity_id). Chiavi per
+`entities`: `quota_status`, `quota_percent`, `quota_used`, `quota_remaining`, `quota_limit`, `quota_reset`,
+`quota_minutes_to_reset`, `tado_ce_tracked`, `api_calls_today`, `unexplained_calls`. Toccando una riga si apre il
+dettaglio dell'entita'.
 
 Le card leggono le entita' dell'integrazione (`sensor.hp_all_rooms`, `switch.hp_<stanza>_enabled`, `sensor.hp_<stanza>_plan`, …)
 e chiamano i servizi `tado_heating_manager.set_slots` e `tado_heating_manager.set_room_order`.

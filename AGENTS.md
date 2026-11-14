@@ -10,8 +10,12 @@ hacs.json                            filename = tado-heating-manager-cards.js
 tools/deploy.sh, bump_resource.py    deploy manuale con aggiornamento automatico di ?v=
 ```
 
-Il file contiene tre card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
-`heating-planner-card` (HP_*), `heating-radiator-card` (HR_*), `heating-ac-card` (AC_*).
+Il file contiene quattro card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
+`heating-planner-card` (HP_*), `heating-radiator-card` (HR_*), `heating-ac-card` (AC_*), `tado-quota-card` (TQ_*).
+La card della quota trova i sensori da `hass.entities` (platform `tado_heating_manager` + `translation_key`, cioe' le
+chiavi di `HUB_KEYS`), poi ripiega sui nomi storici `sensor.system_tado_offset_manager_*`; il grafico usa la
+`history-graph` di HA (`loadCardHelpers`). Prova veloce senza HA: Chrome headless con una pagina che carica il file e
+passa un `hass` finto (`states` + `entities`).
 
 ## Regole
 

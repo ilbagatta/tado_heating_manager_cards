@@ -1,12 +1,13 @@
 /* Tado Heating Manager Cards
  * Card Lovelace per l'integrazione Tado Heating Manager (custom_components/tado_heating_manager).
- * Un solo file con tre card, senza dipendenze e senza build:
+ * Un solo file con quattro card, senza dipendenze e senza build:
  *   custom:heating-planner-card    programmi a fasce di tutte le stanze (Feriali / Weekend)
  *   custom:heating-radiator-card   riga di un termosifone
  *   custom:heating-ac-card         riga di un climatizzatore
+ *   custom:tado-quota-card         quota API Tado (stato, indicatori, provenienza delle chiamate, grafico)
  * Ogni card e' racchiusa in un blocco { } cosi' le costanti non si scontrano.
  */
-const THM_CARDS_VERSION = "2.0.1";
+const THM_CARDS_VERSION = "2.1.0";
 console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#fff;background:#ff8a3d;font-weight:600", "color:#ff8a3d");
 
 // ===== heating-planner-card.js =====
@@ -1243,5 +1244,310 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     type: "heating-ac-card",
     name: "Heating AC",
     description: "Riga climatizzatore: modalità, oscillazione, temperatura target e stato.",
+  });
+}
+
+// ===== tado-quota-card.js =====
+{
+  /* Quota API Tado: stato, indicatori, dettaglio delle chiamate e grafico.
+   * Uso:  type: custom:tado-quota-card
+   * Opzioni (tutte facoltative):
+   *   title: "Quota API Tado"
+   *   hours_to_show: 48        ore del grafico (0 = niente grafico)
+   *   entities:                 entity_id da usare al posto di quelli trovati in automatico
+   *     quota_status: sensor.xxx
+   * Le entita' si trovano da sole (piattaforma tado_heating_manager + chiave), quindi la card funziona
+   * qualunque sia l'entity_id; se non le trova usa i nomi storici sensor.system_tado_offset_manager_*.
+   */
+  const TQ_PLATFORM = "tado_heating_manager";
+  const TQ_LEGACY = {
+    quota_status: "sensor.system_tado_offset_manager_quota_tado_stato",
+    quota_percent: "sensor.system_tado_offset_manager_quota_tado_usata",
+    quota_used: "sensor.system_tado_offset_manager_quota_tado_usate",
+    quota_remaining: "sensor.system_tado_offset_manager_quota_tado_residue",
+    quota_limit: "sensor.system_tado_offset_manager_quota_tado_limite",
+    quota_reset: "sensor.system_tado_offset_manager_quota_tado_prossimo_reset",
+    quota_minutes_to_reset: "sensor.system_tado_offset_manager_quota_tado_minuti_al_reset",
+    tado_ce_tracked: "sensor.system_tado_offset_manager_chiamate_contate_da_tado_ce",
+    api_calls_today: "sensor.system_tado_offset_manager_chiamate_tado_oggi_questa_integrazione",
+    unexplained_calls: "sensor.system_tado_offset_manager_chiamate_tado_non_spiegate",
+  };
+  const TQ_GREEN = "#43a047";
+  const TQ_ORANGE = "#fb8c00";
+  const TQ_RED = "#e53935";
+  const TQ_STATUS = {
+    ok: { dot: TQ_GREEN, text: "Tutto ok" },
+    warning: { dot: TQ_ORANGE, text: "Attenzione: quota quasi esaurita" },
+    critical: { dot: TQ_RED, text: "Quota critica: tado_ce sospende il polling fino al reset" },
+  };
+
+  const tqEsc = (s) =>
+    String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const tqNum = (s) => (s && !isNaN(Number(s.state)) ? Number(s.state) : null);
+
+  class TadoQuotaCard extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+      this._sig = "";
+      this._ids = null;
+    }
+
+    setConfig(config) {
+      this._config = { title: "Quota API Tado", hours_to_show: 48, ...(config || {}) };
+      this._sig = "";
+      this._ids = null;
+      this._graph = null;
+      this._graphPending = false;
+      this._build();
+    }
+
+    getCardSize() {
+      return this._config && Number(this._config.hours_to_show) > 0 ? 9 : 6;
+    }
+
+    getGridOptions() {
+      return { columns: "full" };
+    }
+
+    static getStubConfig() {
+      return {};
+    }
+
+    set hass(hass) {
+      this._hass = hass;
+      // il registro puo' arrivare dopo il primo hass: finche' manca si riprova
+      if (!this._ids || !this._idsFromReg) this._ids = this._resolve();
+      if (this._graph) this._graph.hass = hass;
+      else this._makeGraph();
+      const sig = Object.values(this._ids)
+        .map((id) => {
+          const s = hass.states[id];
+          return s ? s.state + JSON.stringify(s.attributes) : "-";
+        })
+        .join("|");
+      if (sig === this._sig) return;
+      this._sig = sig;
+      this._update();
+    }
+
+    // entity_id per chiave: configurazione > registro (piattaforma + chiave) > nomi storici
+    _resolve() {
+      const out = {};
+      const reg = this._hass.entities || {};
+      this._idsFromReg = Object.keys(reg).length > 0;
+      const found = {};
+      Object.values(reg).forEach((e) => {
+        if (e.platform === TQ_PLATFORM && e.translation_key && e.entity_id.startsWith("sensor.")) found[e.translation_key] = e.entity_id;
+      });
+      const over = this._config.entities || {};
+      Object.keys(TQ_LEGACY).forEach((k) => {
+        out[k] = over[k] || found[k] || TQ_LEGACY[k];
+      });
+      return out;
+    }
+
+    _st(key) {
+      return this._hass && this._ids ? this._hass.states[this._ids[key]] : undefined;
+    }
+
+    _more(key) {
+      const id = this._ids && this._ids[key];
+      if (!id) return;
+      this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId: id }, bubbles: true, composed: true }));
+    }
+
+    async _makeGraph() {
+      const hours = Number(this._config.hours_to_show);
+      if (!(hours > 0) || this._graphPending || !this._hass || !window.loadCardHelpers) return;
+      this._graphPending = true;
+      try {
+        const helpers = await window.loadCardHelpers();
+        const card = helpers.createCardElement({
+          type: "history-graph",
+          hours_to_show: hours,
+          entities: [
+            { entity: this._ids.quota_used, name: "Usate" },
+            { entity: this._ids.quota_remaining, name: "Residue" },
+          ],
+        });
+        card.hass = this._hass;
+        this._graph = card;
+        this._e.graph.replaceChildren(card);
+      } catch (err) {
+        this._e.graph.textContent = "Grafico non disponibile";
+      }
+    }
+
+    _build() {
+      this.shadowRoot.innerHTML = `
+        <style>
+          ha-card { padding: 16px; color: var(--primary-text-color); }
+          .head { display:flex; align-items:center; gap:10px; }
+          .title { font-size: 1.25em; font-weight: 600; flex: 1; }
+          .badge { padding: 4px 10px; border-radius: 12px; font-size: .85em; font-weight: 600; color: #fff; }
+          .msg { margin-top: 6px; display:flex; align-items:center; gap:8px; }
+          .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+          .reset { margin-top: 4px; color: var(--secondary-text-color); font-size: .95em; }
+          .gauges { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+          .gauge { text-align:center; cursor:pointer; border-radius: 12px; padding: 6px 4px;
+                   background: color-mix(in srgb, var(--primary-text-color) 4%, transparent); }
+          .gauge svg { width: 100%; max-width: 180px; display:block; margin: 0 auto; }
+          .gauge .v { font-size: 1.4em; font-weight: 600; margin-top: 2px; }
+          .gauge .l { color: var(--secondary-text-color); font-size: .9em; }
+          .sec { margin: 16px 0 6px; font-weight: 600; color: var(--secondary-text-color); font-size: .85em;
+                 text-transform: uppercase; letter-spacing: .04em; }
+          .row { display:flex; align-items:center; gap:10px; padding: 7px 2px; cursor:pointer; border-radius: 8px; }
+          .row:hover { background: color-mix(in srgb, var(--primary-text-color) 6%, transparent); }
+          .row ha-icon { color: var(--state-icon-color, var(--secondary-text-color)); --mdc-icon-size: 20px; flex: none; }
+          .row .n { flex: 1; min-width: 0; }
+          .row .x { font-variant-numeric: tabular-nums; white-space: nowrap; }
+          .row.sub { padding-left: 30px; font-size: .92em; color: var(--secondary-text-color); }
+          .bar { height: 8px; border-radius: 4px; overflow: hidden; display:flex; margin: 6px 2px 4px;
+                 background: color-mix(in srgb, var(--primary-text-color) 10%, transparent); }
+          .bar span { height: 100%; }
+          .legend { display:flex; flex-wrap:wrap; gap: 4px 14px; font-size: .85em; color: var(--secondary-text-color); margin: 0 2px; }
+          .legend i { display:inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+          .graph { margin: 14px -16px -16px; }
+          .graph:empty { display:none; }
+        </style>
+        <ha-card>
+          <div class="head"><div class="title"></div><div class="badge"></div></div>
+          <div class="msg"><span class="dot"></span><span class="mtxt"></span></div>
+          <div class="reset"></div>
+          <div class="gauges">
+            <div class="gauge" data-k="quota_percent"><div class="g1"></div><div class="v v1"></div><div class="l">Usata</div></div>
+            <div class="gauge" data-k="quota_remaining"><div class="g2"></div><div class="v v2"></div><div class="l">Residue</div></div>
+          </div>
+          <div class="sec">Dettaglio</div>
+          <div class="detail"></div>
+          <div class="sec">Da dove arrivano le chiamate</div>
+          <div class="bar"></div>
+          <div class="legend"></div>
+          <div class="sources"></div>
+          <div class="graph"></div>
+        </ha-card>`;
+      const $ = (s) => this.shadowRoot.querySelector(s);
+      this._e = {
+        title: $(".title"), badge: $(".badge"), dot: $(".dot"), mtxt: $(".mtxt"), reset: $(".reset"),
+        g1: $(".g1"), g2: $(".g2"), v1: $(".v1"), v2: $(".v2"),
+        detail: $(".detail"), bar: $(".bar"), legend: $(".legend"), sources: $(".sources"), graph: $(".graph"),
+      };
+      this.shadowRoot.addEventListener("click", (ev) => {
+        const el = ev.target.closest("[data-k]");
+        if (el) this._more(el.dataset.k);
+      });
+    }
+
+    // semicerchio con segmenti colorati e lancetta; value e segmenti in [0, max]
+    _gauge(value, max, segments) {
+      const R = 40, CX = 50, CY = 50, W = 10;
+      const pt = (f) => {
+        const a = Math.PI * (1 - f);
+        return [CX + R * Math.cos(a), CY - R * Math.sin(a)];
+      };
+      const arc = (f0, f1, color) => {
+        const [x0, y0] = pt(f0);
+        const [x1, y1] = pt(f1);
+        return `<path d="M${x0.toFixed(2)} ${y0.toFixed(2)} A${R} ${R} 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)}" stroke="${color}" stroke-width="${W}" fill="none"/>`;
+      };
+      let paths = "";
+      segments.forEach((s, i) => {
+        const end = i + 1 < segments.length ? segments[i + 1].from : max;
+        paths += arc(Math.max(0, s.from / max), Math.min(1, end / max), s.color);
+      });
+      let needle = "";
+      if (value !== null) {
+        const f = Math.max(0, Math.min(1, value / max));
+        const a = Math.PI * (1 - f);
+        const x = CX + (R - 2) * Math.cos(a), y = CY - (R - 2) * Math.sin(a);
+        needle = `<line x1="${CX}" y1="${CY}" x2="${x.toFixed(2)}" y2="${y.toFixed(2)}" stroke="var(--primary-text-color)" stroke-width="2.5" stroke-linecap="round"/>
+                  <circle cx="${CX}" cy="${CY}" r="4" fill="var(--primary-text-color)"/>`;
+      }
+      return `<svg viewBox="0 0 100 56">${paths}${needle}</svg>`;
+    }
+
+    _row(key, icon, name, value, sub) {
+      return `<div class="row${sub ? " sub" : ""}" data-k="${key}"><ha-icon icon="${icon}"></ha-icon>` +
+        `<span class="n">${tqEsc(name)}</span><span class="x">${tqEsc(value)}</span></div>`;
+    }
+
+    _update() {
+      if (!this._e || !this._hass) return;
+      const e = this._e;
+      const fmt = (s) => (s && s.state !== "unavailable" && s.state !== "unknown" ? s.state : "--");
+
+      e.title.textContent = this._config.title;
+      const status = this._st("quota_status");
+      const st = TQ_STATUS[status && status.state] || { dot: "var(--disabled-text-color, #999)", text: "Stato non disponibile" };
+      e.dot.style.background = st.dot;
+      e.badge.style.background = st.dot;
+      e.badge.textContent = status ? ({ ok: "OK", warning: "Attenzione", critical: "Critica" }[status.state] || status.state) : "--";
+      e.mtxt.textContent = st.text;
+
+      const resetS = this._st("quota_reset");
+      const mins = tqNum(this._st("quota_minutes_to_reset"));
+      let resetTxt = "";
+      if (resetS && !isNaN(Date.parse(resetS.state))) {
+        const d = new Date(resetS.state);
+        resetTxt = `Reset alle ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+        if (mins !== null) resetTxt += ` (tra ${Math.floor(mins / 60)} h ${Math.round(mins % 60)} min)`;
+      }
+      e.reset.textContent = resetTxt;
+
+      const pct = tqNum(this._st("quota_percent"));
+      const rem = tqNum(this._st("quota_remaining"));
+      const limit = tqNum(this._st("quota_limit")) || 1000;
+      e.g1.innerHTML = this._gauge(pct, 100, [
+        { from: 0, color: TQ_GREEN }, { from: 70, color: TQ_ORANGE }, { from: 90, color: TQ_RED },
+      ]);
+      e.v1.textContent = pct === null ? "--" : `${pct.toFixed(1).replace(/\.0$/, "")}%`;
+      e.g2.innerHTML = this._gauge(rem, limit, [
+        { from: 0, color: TQ_RED }, { from: limit * 0.1, color: TQ_ORANGE }, { from: limit * 0.3, color: TQ_GREEN },
+      ]);
+      e.v2.textContent = rem === null ? "--" : String(rem);
+
+      e.detail.innerHTML =
+        this._row("quota_limit", "mdi:gauge-full", "Quota giornaliera", fmt(this._st("quota_limit"))) +
+        this._row("quota_used", "mdi:counter", "Usate", fmt(this._st("quota_used"))) +
+        this._row("quota_remaining", "mdi:battery-60", "Residue", fmt(this._st("quota_remaining"))) +
+        this._row("quota_reset", "mdi:timer-refresh", "Prossimo reset",
+          resetS && !isNaN(Date.parse(resetS.state)) ? new Date(resetS.state).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "--");
+
+      // fonti: tado_ce (letture, comandi, zone), questa integrazione, non spiegate
+      const ce = this._st("tado_ce_tracked");
+      const own = this._st("api_calls_today");
+      const unk = this._st("unexplained_calls");
+      const ca = (ce && ce.attributes) || {};
+      const n = (v) => (v === undefined || v === null || isNaN(Number(v)) ? 0 : Number(v));
+      const ownN = own ? n(own.attributes.since_quota_reset ?? own.state) : 0;
+      const parts = [
+        { k: "tado_ce_tracked", label: "tado_ce", v: n(ce && ce.state), color: "#1e88e5" },
+        { k: "api_calls_today", label: "Heating Manager", v: ownN, color: "#ff8a3d" },
+        { k: "unexplained_calls", label: "Non spiegate", v: n(unk && unk.state), color: "#8e24aa" },
+      ];
+      const tot = parts.reduce((a, p) => a + p.v, 0);
+      e.bar.innerHTML = tot ? parts.filter((p) => p.v).map((p) => `<span style="width:${(p.v / tot) * 100}%;background:${p.color}"></span>`).join("") : "";
+      e.legend.innerHTML = parts.map((p) => `<span><i style="background:${p.color}"></i>${tqEsc(p.label)} ${p.v}</span>`).join("");
+
+      let src = this._row("tado_ce_tracked", "mdi:home-thermometer", "Contate da tado_ce", fmt(ce));
+      [["zoneStates", "mdi:eye", "letture stato (zoneStates)"], ["overlay", "mdi:send", "comandi (overlay)"], ["zones", "mdi:format-list-bulleted", "elenco zone (zones)"]]
+        .forEach(([a, icon, label]) => {
+          if (ca[a] !== undefined) src += this._row("tado_ce_tracked", icon, `di cui ${label}`, String(ca[a]), true);
+        });
+      src += this._row("api_calls_today", "mdi:thermometer-auto", "Heating Manager (dal reset)", own ? String(ownN) : "--");
+      src += this._row("unexplained_calls", "mdi:help-network", "Non spiegate (altre app / integrazioni)", fmt(unk));
+      e.sources.innerHTML = src;
+    }
+  }
+
+  if (!customElements.get("tado-quota-card")) {
+    customElements.define("tado-quota-card", TadoQuotaCard);
+  }
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: "tado-quota-card",
+    name: "Tado Quota",
+    description: "Quota API Tado: stato, indicatori, provenienza delle chiamate e grafico.",
   });
 }
