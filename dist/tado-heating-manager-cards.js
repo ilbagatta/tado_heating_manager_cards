@@ -7,7 +7,7 @@
  *   custom:tado-quota-card         quota API Tado (stato, indicatori, provenienza delle chiamate, grafico)
  * Ogni card e' racchiusa in un blocco { } cosi' le costanti non si scontrano.
  */
-const THM_CARDS_VERSION = "2.3.1";
+const THM_CARDS_VERSION = "2.3.2";
 console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#fff;background:#ff8a3d;font-weight:600", "color:#ff8a3d");
 
 // ===== heating-planner-card.js =====
@@ -1278,7 +1278,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   const TQ_STATUS = {
     ok: { dot: TQ_GREEN, text: "Tutto ok" },
     warning: { dot: TQ_ORANGE, text: "Attenzione: quota quasi esaurita" },
-    critical: { dot: TQ_RED, text: "Quota critica: tado_ce sospende il polling fino al reset" },
+    critical: { dot: TQ_RED, text: "Quota critica: Tado CE sospende il polling fino al reset" },
   };
 
   const tqEsc = (s) =>
@@ -1522,7 +1522,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       const n = (v) => (v === undefined || v === null || isNaN(Number(v)) ? 0 : Number(v));
       const ownN = own ? n(own.attributes.since_quota_reset ?? own.state) : 0;
       const parts = [
-        { k: "tado_ce_tracked", label: "tado_ce", v: n(ce && ce.state), color: "#1e88e5" },
+        { k: "tado_ce_tracked", label: "Tado CE", v: n(ce && ce.state), color: "#1e88e5" },
         { k: "api_calls_today", label: "Offset", v: ownN, color: "#ff8a3d" },
         { k: "unexplained_calls", label: "Non spiegate", v: n(unk && unk.state), color: "#8e24aa" },
       ];
@@ -1530,7 +1530,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       e.bar.innerHTML = tot ? parts.filter((p) => p.v).map((p) => `<span style="width:${(p.v / tot) * 100}%;background:${p.color}"></span>`).join("") : "";
       e.legend.innerHTML = parts.map((p) => `<span><i style="background:${p.color}"></i>${tqEsc(p.label)} ${p.v}</span>`).join("");
 
-      let src = this._row("tado_ce_tracked", "mdi:home-thermometer", "Contate da tado_ce", fmt(ce));
+      let src = this._row("tado_ce_tracked", "mdi:home-thermometer", "Aggiornamenti di Tado CE", fmt(ce));
       [["zoneStates", "mdi:eye", "letture stato (zoneStates)"], ["overlay", "mdi:send", "comandi (overlay)"], ["zones", "mdi:format-list-bulleted", "elenco zone (zones)"]]
         .forEach(([a, icon, label]) => {
           if (ca[a] !== undefined) src += this._row("tado_ce_tracked", icon, `di cui ${label}`, String(ca[a]), true);
