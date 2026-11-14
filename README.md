@@ -15,6 +15,7 @@ e quella della quota richiedono l'integrazione Tado Heating Manager.
 | `custom:heating-radiator-card` | Riga di un termosifone (modo, temperatura, offset, popup con grafico) |
 | `custom:heating-ac-card` | Riga di un climatizzatore |
 | `custom:tado-quota-card` | Quota API Tado: stato, indicatori, provenienza delle chiamate, grafico |
+| `custom:heating-hours-card` | Ore dei termosifoni (oggi, 7 e 30 giorni): riscalda, valvola chiusa, spento |
 
 Le card sono separate dall'integrazione: dopo una modifica basta **ricaricare la dashboard**, senza riavviare Home Assistant.
 
@@ -37,7 +38,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.1.0`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.2.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -88,6 +89,20 @@ hours_to_show: 48         # facoltativo: ore del grafico (0 = niente grafico)
 entities:                 # facoltativo: solo per forzare entita' diverse da quelle trovate in automatico
   quota_status: sensor.xxx
 ```
+
+```yaml
+type: custom:heating-hours-card
+title: Termosifoni        # facoltativo
+rooms:                    # facoltativo: se manca, tutti i sensori *_riepilogo_ore nell'ordine delle stanze
+  - entity: sensor.termo_soggiorno_riepilogo_ore
+    name: Soggiorno                   # facoltativo
+    climate: climate.termo_soggiorno  # facoltativo: cosa aprire toccando la stanza
+```
+
+La card delle ore legge un sensore "riepilogo ore" per stanza (per esempio un template sensor) con gli attributi
+`heating_oggi_h`, `idle_oggi_h`, `off_oggi_h`, `heating_7g_h`, `idle_7g_h`, `heating_30g_h`, `idle_30g_h`,
+`perc_heating_7g`, `perc_heating_30g`, `azione` (heating/idle/off), `modalita`, `temperatura_attuale`,
+`temperatura_obiettivo`. Tenendo il dito su una barra (o col mouse sopra) si vede il dettaglio.
 
 La card della quota trova da sola i sensori di Tado Heating Manager (qualunque sia il loro entity_id). Chiavi per
 `entities`: `quota_status`, `quota_percent`, `quota_used`, `quota_remaining`, `quota_limit`, `quota_reset`,

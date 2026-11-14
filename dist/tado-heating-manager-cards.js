@@ -1,13 +1,14 @@
 /* Tado Heating Manager Cards
  * Card Lovelace per l'integrazione Tado Heating Manager (custom_components/tado_heating_manager).
- * Un solo file con quattro card, senza dipendenze e senza build:
+ * Un solo file con cinque card, senza dipendenze e senza build:
  *   custom:heating-planner-card    programmi a fasce di tutte le stanze (Feriali / Weekend)
  *   custom:heating-radiator-card   riga di un termosifone
  *   custom:heating-ac-card         riga di un climatizzatore
  *   custom:tado-quota-card         quota API Tado (stato, indicatori, provenienza delle chiamate, grafico)
+ *   custom:heating-hours-card      ore dei termosifoni (oggi, 7 e 30 giorni)
  * Ogni card e' racchiusa in un blocco { } cosi' le costanti non si scontrano.
  */
-const THM_CARDS_VERSION = "2.1.0";
+const THM_CARDS_VERSION = "2.2.0";
 console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#fff;background:#ff8a3d;font-weight:600", "color:#ff8a3d");
 
 // ===== heating-planner-card.js =====
@@ -1549,5 +1550,222 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     type: "tado-quota-card",
     name: "Tado Quota",
     description: "Quota API Tado: stato, indicatori, provenienza delle chiamate e grafico.",
+  });
+}
+
+// ===== heating-hours-card.js =====
+{
+  /* Ore di funzionamento dei termosifoni (oggi, 7 giorni, 30 giorni), pensata per lo smartphone.
+   * Uso:  type: custom:heating-hours-card
+   * Opzioni (tutte facoltative):
+   *   title: Termosifoni
+   *   rooms:                       se manca: tutti i sensori *_riepilogo_ore, nell'ordine delle stanze di Heating Manager
+   *     - entity: sensor.termo_soggiorno_riepilogo_ore
+   *       name: Soggiorno
+   *       climate: climate.termo_soggiorno     (toccando la stanza si apre questo; se manca si cerca da solo)
+   * Attributi letti dal sensore: heating_/idle_/off_oggi_h, heating_/idle_7g_h, heating_/idle_30g_h, perc_heating_7g/30g,
+   * azione (heating/idle/off), modalita, temperatura_attuale, temperatura_obiettivo.
+   */
+  const HH_HEAT = "#ff8a3d";
+  const HH_IDLE = "#4f8fe6";
+  const HH_OFF = "color-mix(in srgb, var(--primary-text-color) 22%, transparent)";
+  const HH_ACT = {
+    heating: { icon: "mdi:fire", color: HH_HEAT, text: "Riscalda" },
+    idle: { icon: "mdi:sleep", color: HH_IDLE, text: "Valvola chiusa" },
+    off: { icon: "mdi:power", color: "var(--secondary-text-color)", text: "Spento" },
+  };
+  const HH_SUFFIX = "_riepilogo_ore";
+
+  const hhEsc = (s) =>
+    String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const hhN = (v) => (v === undefined || v === null || isNaN(Number(v)) ? 0 : Number(v));
+  const hhH = (v) => {
+    const n = hhN(v);
+    return n < 100 ? n.toFixed(1) : Math.round(n).toString();
+  };
+
+  class HeatingHoursCard extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+      this._sig = "";
+    }
+
+    setConfig(config) {
+      this._config = { title: "Termosifoni", ...(config || {}) };
+      this._sig = "";
+      this._build();
+    }
+
+    getCardSize() {
+      return 2 + 3 * this._rooms().length;
+    }
+
+    getGridOptions() {
+      return { columns: "full" };
+    }
+
+    static getStubConfig() {
+      return {};
+    }
+
+    set hass(hass) {
+      this._hass = hass;
+      const rooms = this._rooms();
+      const sig = rooms
+        .map((r) => {
+          const s = hass.states[r.entity];
+          const c = hass.states[r.climate];
+          return (s ? s.last_updated : "-") + (c ? c.last_updated : "-");
+        })
+        .join("|");
+      if (sig === this._sig) return;
+      this._sig = sig;
+      this._update(rooms);
+    }
+
+    // stanze da mostrare: configurazione, altrimenti tutti i sensori *_riepilogo_ore
+    _rooms() {
+      const hass = this._hass;
+      if (!hass) return [];
+      let list;
+      if (Array.isArray(this._config.rooms) && this._config.rooms.length) {
+        list = this._config.rooms.map((r) => (typeof r === "string" ? { entity: r } : { ...r }));
+      } else {
+        list = Object.keys(hass.states)
+          .filter((id) => id.startsWith("sensor.") && id.endsWith(HH_SUFFIX) && "heating_7g_h" in hass.states[id].attributes)
+          .map((entity) => ({ entity }));
+        // ordine delle stanze di Heating Manager, se c'e'
+        const all = hass.states["sensor.hp_all_rooms"];
+        const order = ((all && all.attributes.rooms) || []).map((r) => r.slug);
+        const rank = (id) => {
+          const i = order.findIndex((slug) => id.includes(`_${slug}${HH_SUFFIX}`) || id === `sensor.${slug}${HH_SUFFIX}`);
+          return i < 0 ? 999 : i;
+        };
+        list.sort((a, b) => rank(a.entity) - rank(b.entity) || a.entity.localeCompare(b.entity));
+      }
+      return list.map((r) => {
+        const s = hass.states[r.entity];
+        const base = r.entity.replace(/^sensor\./, "").replace(HH_SUFFIX, "");
+        const slug = base.replace(/^(termo|termosifone)_/, "");
+        const climate =
+          r.climate ||
+          [`climate.${base}`, `climate.termo_${slug}`, `climate.termosifone_${slug}`, `climate.${slug}`].find((c) => hass.states[c]) ||
+          null;
+        let name = r.name;
+        if (!name && s) {
+          name = String(s.attributes.friendly_name || base)
+            .replace(/ riepilogo ore$/i, "")
+            .replace(/^(Termo|Termosifone) /i, "");
+        }
+        return { entity: r.entity, climate, name: name || slug };
+      });
+    }
+
+    _build() {
+      this.shadowRoot.innerHTML = `
+        <style>
+          ha-card { padding: 14px 14px 10px; color: var(--primary-text-color); }
+          .top { display:flex; align-items:center; gap: 8px; margin: 0 2px 6px; flex-wrap: wrap; }
+          .title { font-size: 1.2em; font-weight: 600; flex: 1; min-width: 120px; }
+          .legend { display:flex; flex-wrap: wrap; gap: 2px 10px; font-size: .78em; color: var(--secondary-text-color); }
+          .legend i { display:inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+          .room { padding: 10px 2px 8px; border-top: 1px solid var(--divider-color); }
+          .room:first-of-type { border-top: none; }
+          .head { display:flex; align-items:center; gap: 10px; cursor: pointer; margin-bottom: 8px; }
+          .ico { width: 36px; height: 36px; border-radius: 50%; display:flex; align-items:center; justify-content:center; flex: none;
+                 background: color-mix(in srgb, currentColor 14%, transparent); }
+          .ico ha-icon { --mdc-icon-size: 20px; }
+          .who { flex: 1; min-width: 0; }
+          .name { font-weight: 600; font-size: 1.05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .sub { font-size: .85em; color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .temp { font-size: 1.35em; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+          .grid { display:grid; grid-template-columns: 42px minmax(0,1fr) 46px 46px; align-items:center; gap: 6px 8px; }
+          .grid .hd { font-size: .72em; color: var(--secondary-text-color); text-align: right; }
+          .lbl { font-size: .85em; color: var(--secondary-text-color); }
+          .bar { height: 10px; border-radius: 5px; overflow: hidden; display:flex;
+                 background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); }
+          .bar span { height: 100%; }
+          .h { text-align: right; font-variant-numeric: tabular-nums; font-size: .9em; white-space: nowrap; }
+          .h.heat { color: ${HH_HEAT}; font-weight: 600; }
+          .h.idle { color: ${HH_IDLE}; }
+          .empty { color: var(--secondary-text-color); padding: 8px 2px; }
+        </style>
+        <ha-card>
+          <div class="top">
+            <div class="title"></div>
+            <div class="legend">
+              <span><i style="background:${HH_HEAT}"></i>Riscalda</span>
+              <span><i style="background:${HH_IDLE}"></i>Valvola chiusa</span>
+              <span><i style="background:${HH_OFF}"></i>Spento</span>
+            </div>
+          </div>
+          <div class="rooms"></div>
+        </ha-card>`;
+      this._e = { title: this.shadowRoot.querySelector(".title"), rooms: this.shadowRoot.querySelector(".rooms") };
+      this.shadowRoot.addEventListener("click", (ev) => {
+        const el = ev.target.closest("[data-more]");
+        if (!el || !el.dataset.more) return;
+        this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId: el.dataset.more }, bubbles: true, composed: true }));
+      });
+    }
+
+    // riga: etichetta, barra (riscalda / valvola chiusa / spento), ore di riscaldamento e di valvola chiusa
+    _line(label, heat, idle, off, perc) {
+      const tot = heat + idle + off;
+      const w = (v) => (tot > 0 ? (v / tot) * 100 : 0);
+      const title = `${label}: riscalda ${hhH(heat)} h, valvola chiusa ${hhH(idle)} h` +
+        (off ? `, spento ${hhH(off)} h` : "") + (perc !== null ? ` (${perc}% del tempo acceso)` : "");
+      return `<div class="lbl">${label}</div>
+        <div class="bar" title="${hhEsc(title)}">
+          <span style="width:${w(heat)}%;background:${HH_HEAT}"></span>
+          <span style="width:${w(idle)}%;background:${HH_IDLE}"></span>
+          <span style="width:${w(off)}%;background:${HH_OFF}"></span>
+        </div>
+        <div class="h heat">${hhH(heat)} h</div><div class="h idle">${hhH(idle)} h</div>`;
+    }
+
+    _update(rooms) {
+      if (!this._e) return;
+      this._e.title.textContent = this._config.title;
+      if (!rooms.length) {
+        this._e.rooms.innerHTML = `<div class="empty">Nessun sensore "${HH_SUFFIX}" trovato: indica le stanze con <code>rooms:</code>.</div>`;
+        return;
+      }
+      this._e.rooms.innerHTML = rooms
+        .map((r) => {
+          const s = this._hass.states[r.entity];
+          if (!s) return `<div class="room"><div class="empty">${hhEsc(r.entity)} non trovato</div></div>`;
+          const a = s.attributes;
+          const act = HH_ACT[a.azione] || HH_ACT.off;
+          const off = a.modalita === "off";
+          const t = a.temperatura_attuale;
+          const sub = off ? "Spento" : `${act.text} · imposta ${hhEsc(a.temperatura_obiettivo)}°`;
+          return `<div class="room">
+            <div class="head" data-more="${hhEsc(r.climate || r.entity)}">
+              <div class="ico" style="color:${act.color}"><ha-icon icon="${act.icon}"></ha-icon></div>
+              <div class="who"><div class="name">${hhEsc(r.name)}</div><div class="sub">${sub}</div></div>
+              <div class="temp">${t === undefined || t === null ? "--" : hhEsc(Number(t).toFixed(1))}°</div>
+            </div>
+            <div class="grid">
+              <div></div><div></div><div class="hd">caldo</div><div class="hd">chiusa</div>
+              ${this._line("Oggi", hhN(a.heating_oggi_h), hhN(a.idle_oggi_h), hhN(a.off_oggi_h), null)}
+              ${this._line("7 gg", hhN(a.heating_7g_h), hhN(a.idle_7g_h), 0, a.perc_heating_7g ?? null)}
+              ${this._line("30 gg", hhN(a.heating_30g_h), hhN(a.idle_30g_h), 0, a.perc_heating_30g ?? null)}
+            </div>
+          </div>`;
+        })
+        .join("");
+    }
+  }
+
+  if (!customElements.get("heating-hours-card")) {
+    customElements.define("heating-hours-card", HeatingHoursCard);
+  }
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: "heating-hours-card",
+    name: "Heating Hours",
+    description: "Ore dei termosifoni (oggi, 7 e 30 giorni): riscaldamento, valvola chiusa, spento.",
   });
 }
