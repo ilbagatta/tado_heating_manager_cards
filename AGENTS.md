@@ -10,8 +10,8 @@ hacs.json                            filename = tado-heating-manager-cards.js
 tools/deploy.sh, bump_resource.py    deploy manuale con aggiornamento automatico di ?v=
 ```
 
-Il file contiene cinque card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
-`heating-planner-card` (HP_*), `heating-radiator-card` (HR_*), `heating-ac-card` (AC_*), `tado-quota-card` (TQ_*), `heating-hours-card` (HH_*).
+Il file contiene quattro card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
+`heating-planner-card` (HP_*), `heating-radiator-card` (HR_*), `heating-ac-card` (AC_*), `tado-quota-card` (TQ_*).
 La card della quota trova i sensori da `hass.entities` (platform `tado_heating_manager` + `translation_key`, cioe' le
 chiavi di `HUB_KEYS`), poi ripiega sui nomi storici `sensor.system_tado_offset_manager_*`; il grafico usa la
 `history-graph` di HA (`loadCardHelpers`). Prova veloce senza HA: Chrome headless con una pagina che carica il file e
@@ -42,3 +42,9 @@ Niente dati delle installazioni reali nel repository (host, IP, entita' personal
 `tools/deploy.sh <host>` (chiedi conferma all'utente prima di scrivere): copia `dist/tado-heating-manager-cards.js` in
 `/config/www/` e con `tools/bump_resource.py` (eseguito sul server, WebSocket del Supervisor, solo libreria standard) porta
 la risorsa Lovelace a `?v=<THM_CARDS_VERSION>` (la crea se manca). Non serve riavviare HA: basta un refresh normale.
+
+## Card rimandate
+
+`heating-hours-card` (ore dei termosifoni oggi/7/30 giorni, pensata per lo smartphone) e' stata pubblicata in 2.2.0 e
+tolta in 2.3.0: tornera' quando Tado Heating Manager avra' i sensori delle ore (versione 1.1.0). Il codice e' nel commit
+0c474ea (`git show 0c474ea:dist/tado-heating-manager-cards.js`, blocco `heating-hours-card.js`).
