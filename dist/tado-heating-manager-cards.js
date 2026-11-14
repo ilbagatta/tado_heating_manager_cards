@@ -10,7 +10,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.3.3";
+const THM_CARDS_VERSION = "2.4.0";
 console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#fff;background:#ff8a3d;font-weight:600", "color:#ff8a3d");
 
 // ===== heating-planner-card.js =====
@@ -33,6 +33,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       this._orderMode = false;
       this._sig = "";
       this._pending = false;
+      this._collapsed = null; // letto da localStorage al primo render
       this.shadowRoot.addEventListener("focusout", () => {
         setTimeout(() => {
           if (this._pending && !this._editing()) {
@@ -148,6 +149,11 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       if (summary || single) this._orderMode = false;
       const rooms = single ? allRooms.filter((r) => r.slug === this._room) : allRooms;
       const title = this._config.title || "Riscaldamento";
+      const colKey = `thm-planner-collapsed:${title}`;
+      if (this._collapsed === null) {
+        try { this._collapsed = localStorage.getItem(colKey) === "1"; } catch (e) { this._collapsed = false; }
+      }
+      const collapsed = this._collapsed;
       const hub = this._state("switch.hp_all_enabled");
       const hubOn = hub && hub.state === "on";
       const k = this._kind;
@@ -233,9 +239,19 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           :host { display:block; }
           ha-card { padding:12px; }
           .top { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
-          .title { font-size:1.25em; font-weight:500; }
-          .roomsel { width:100%; box-sizing:border-box; margin-bottom:10px; padding:10px; border-radius:10px; font-size:1em;
-                     border:1px solid var(--divider-color); background:var(--card-background-color); color:var(--primary-text-color); }
+          .top.collapsed { margin-bottom:0; }
+          .title { font-size:1.25em; font-weight:500; display:flex; align-items:center; gap:4px; cursor:pointer; user-select:none;
+                   -webkit-tap-highlight-color:transparent; min-height:36px; }
+          .title ha-icon { --mdc-icon-size:22px; color:var(--secondary-text-color); transition:transform .2s; }
+          .top.collapsed .title ha-icon { transform:rotate(-90deg); }
+          .selwrap { position:relative; margin-bottom:10px; }
+          .selwrap ha-icon { position:absolute; right:12px; top:50%; transform:translateY(-50%); pointer-events:none;
+                             color:var(--secondary-text-color); --mdc-icon-size:22px; }
+          .roomsel { display:block; width:100%; box-sizing:border-box; min-height:46px; padding:10px 44px 10px 14px; border-radius:12px;
+                     font-size:1em; line-height:1.4; font-family:inherit; cursor:pointer; -webkit-appearance:none; -moz-appearance:none; appearance:none;
+                     border:1px solid var(--divider-color); background:var(--secondary-background-color, var(--card-background-color));
+                     color:var(--primary-text-color); }
+          .roomsel:focus { outline:none; border-color:var(--primary-color); }
           .tabs { display:flex; gap:6px; margin-bottom:10px; }
           .tab { flex:1; padding:10px; border-radius:10px; border:1px solid var(--divider-color); background:none;
                  color:var(--primary-text-color); font-size:1em; cursor:pointer; }
@@ -275,28 +291,40 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .empty { padding:16px; color:var(--secondary-text-color); }
         </style>
         <ha-card>
-          <div class="top">
-            <div class="title">${hpEsc(title)}</div>
-            ${summary || single ? "" : `<button class="ord ${this._orderMode ? "sel" : ""}" data-order-toggle="1">${this._orderMode ? "Fatto" : "Ordina stanze"}</button>`}
+          <div class="top ${collapsed ? "collapsed" : ""}">
+            <div class="title" role="button" tabindex="0" aria-expanded="${collapsed ? "false" : "true"}">${hpEsc(title)}<ha-icon icon="mdi:chevron-down"></ha-icon></div>
+            ${summary || single || collapsed ? "" : `<button class="ord ${this._orderMode ? "sel" : ""}" data-order-toggle="1">${this._orderMode ? "Fatto" : "Ordina stanze"}</button>`}
             <label class="toggle" title="Tutti i programmi attivi">
               <input type="checkbox" data-switch="switch.hp_all_enabled" ${hubOn ? "checked" : ""}>
               <span></span>
             </label>
           </div>
-          <select class="roomsel" aria-label="Termosifone">
+          ${collapsed ? "" : `<div class="selwrap"><select class="roomsel" aria-label="Termosifone">
             <option value="summary" ${summary ? "selected" : ""}>Riepilogo (fasce attive)</option>
             <option value="all" ${this._room === "all" ? "selected" : ""}>Tutti (modifica)</option>
             ${allRooms.map((r) => `<option value="${hpEsc(r.slug)}" ${r.slug === this._room ? "selected" : ""}>${hpEsc(r.name)}</option>`).join("")}
-          </select>
+          </select><ha-icon icon="mdi:chevron-down"></ha-icon></div>
           ${summary ? "" : `<div class="tabs">
             ${Object.entries(HP_KINDS)
               .map(([key, label]) => `<button class="tab ${key === k ? "sel" : ""}" data-kind="${key}">${label}</button>`)
               .join("")}
           </div>`}
-          <div class="grid ${summary ? "compact" : ""}">${(summary ? summaryHtml : roomHtml) || '<div class="empty">Nessun termosifone configurato.</div>'}</div>
+          <div class="grid ${summary ? "compact" : ""}">${(summary ? summaryHtml : roomHtml) || '<div class="empty">Nessun termosifone configurato.</div>'}</div>`}
         </ha-card>`;
 
       const root = this.shadowRoot;
+      const titleEl = root.querySelector(".title");
+      const toggleCollapse = () => {
+        this._collapsed = !this._collapsed;
+        try { localStorage.setItem(colKey, this._collapsed ? "1" : "0"); } catch (e) { /* storage non disponibile */ }
+        if (this._collapsed) this._orderMode = false;
+        this._sig = "";
+        this._render();
+      };
+      titleEl.addEventListener("click", toggleCollapse);
+      titleEl.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggleCollapse(); }
+      });
       const sel = root.querySelector(".roomsel");
       if (sel) {
         sel.addEventListener("change", () => {
