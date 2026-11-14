@@ -6,8 +6,11 @@
  *   custom:heating-ac-card         riga di un climatizzatore
  *   custom:tado-quota-card         quota API Tado (stato, indicatori, provenienza delle chiamate, grafico)
  * Ogni card e' racchiusa in un blocco { } cosi' le costanti non si scontrano.
+ *
+ * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
+ * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.3.2";
+const THM_CARDS_VERSION = "2.3.3";
 console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#fff;background:#ff8a3d;font-weight:600", "color:#ff8a3d");
 
 // ===== heating-planner-card.js =====

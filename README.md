@@ -37,7 +37,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.3.2`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.3.3`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -101,4 +101,5 @@ Se compare "Custom element doesn't exist": la risorsa non e' caricata. Apri l'UR
 
 ## Licenza
 
-MIT
+© 2026 ilbagatta — GNU General Public License v3.0 (vedi `LICENSE`).
+Puoi usare, modificare e ridistribuire il codice; le versioni modificate distribuite devono restare GPL-3.0 con il codice sorgente pubblico.
