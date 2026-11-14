@@ -7,7 +7,7 @@
  *   custom:tado-quota-card         quota API Tado (stato, indicatori, provenienza delle chiamate, grafico)
  * Ogni card e' racchiusa in un blocco { } cosi' le costanti non si scontrano.
  */
-const THM_CARDS_VERSION = "2.3.0";
+const THM_CARDS_VERSION = "2.3.1";
 console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#fff;background:#ff8a3d;font-weight:600", "color:#ff8a3d");
 
 // ===== heating-planner-card.js =====
@@ -1523,7 +1523,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       const ownN = own ? n(own.attributes.since_quota_reset ?? own.state) : 0;
       const parts = [
         { k: "tado_ce_tracked", label: "tado_ce", v: n(ce && ce.state), color: "#1e88e5" },
-        { k: "api_calls_today", label: "Heating Manager", v: ownN, color: "#ff8a3d" },
+        { k: "api_calls_today", label: "Offset", v: ownN, color: "#ff8a3d" },
         { k: "unexplained_calls", label: "Non spiegate", v: n(unk && unk.state), color: "#8e24aa" },
       ];
       const tot = parts.reduce((a, p) => a + p.v, 0);
@@ -1535,7 +1535,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         .forEach(([a, icon, label]) => {
           if (ca[a] !== undefined) src += this._row("tado_ce_tracked", icon, `di cui ${label}`, String(ca[a]), true);
         });
-      src += this._row("api_calls_today", "mdi:thermometer-auto", "Heating Manager (dal reset)", own ? String(ownN) : "--");
+      src += this._row("api_calls_today", "mdi:thermometer-auto", "Gestione offset (dal reset)", own ? String(ownN) : "--");
       src += this._row("unexplained_calls", "mdi:help-network", "Non spiegate (altre app / integrazioni)", fmt(unk));
       e.sources.innerHTML = src;
     }
