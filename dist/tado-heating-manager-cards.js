@@ -10,7 +10,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.4.1";
+const THM_CARDS_VERSION = "2.4.2";
 console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#fff;background:#ff8a3d;font-weight:600", "color:#ff8a3d");
 
 // ===== heating-planner-card.js =====
@@ -1153,7 +1153,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           @keyframes ac-sway { from { transform: rotate(-18deg); } to { transform: rotate(18deg); } }
         </style>
         <ha-card>
-          <div class="icon"><ha-icon icon="mdi:air-conditioner" style="--mdc-icon-size:24px"></ha-icon></div>
+          <div class="icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="10" rx="3"/><path d="M6.5 7.4v9.2"/><path d="M8.5 14.3h11"/><circle cx="18.6" cy="10.2" r=".5" fill="currentColor" stroke="none"/></svg></div>
           <div class="info"><div class="name"></div><div class="line"></div></div>
           <div class="btn mode"><ha-icon></ha-icon><select></select></div>
           <div class="btn swing"><ha-icon></ha-icon><select></select></div>
