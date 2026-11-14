@@ -10,7 +10,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.5.0";
+const THM_CARDS_VERSION = "2.5.1";
 console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#fff;background:#ff8a3d;font-weight:600", "color:#ff8a3d");
 
 // ===== heating-planner-card.js =====
@@ -1307,20 +1307,20 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   };
   // chiamate contate da tado_ce, per tipo (attributi di tado_ce_tracked)
   const TQ_TRACKED_TYPES = [
-    ["zoneStates", "mdi:eye", "letture stato (zoneStates)"],
-    ["zones", "mdi:format-list-bulleted", "elenco zone (zones)"],
-    ["overlay", "mdi:send", "comandi (overlay)"],
-    ["weather", "mdi:weather-partly-cloudy", "meteo (weather)"],
-    ["mobileDevices", "mdi:cellphone", "telefoni (mobileDevices)"],
-    ["homeState", "mdi:home-account", "stato casa (homeState)"],
-    ["presenceLock", "mdi:home-lock", "presenza forzata (presenceLock)"],
-    ["capabilities", "mdi:tune", "capacita' zone (capabilities)"],
+    ["zoneStates", "mdi:eye", "stato delle stanze"],
+    ["zones", "mdi:format-list-bulleted", "elenco delle stanze"],
+    ["overlay", "mdi:send", "comandi alle valvole"],
+    ["weather", "mdi:weather-partly-cloudy", "meteo"],
+    ["mobileDevices", "mdi:cellphone", "posizione dei telefoni"],
+    ["homeState", "mdi:home-account", "casa / fuori casa"],
+    ["presenceLock", "mdi:home-lock", "presenza forzata"],
+    ["capabilities", "mdi:tune", "caratteristiche delle zone"],
   ];
   // chiamate che tado_ce fa e non conta (attributi di tado_ce_untracked)
   const TQ_UNTRACKED_TYPES = [
-    ["home_devices", "mdi:devices", "elenco dispositivi (1 per sync completo)"],
-    ["offset_full_sync", "mdi:thermometer-lines", "offset di ogni zona al sync completo"],
-    ["offset_refresh", "mdi:refresh", "riletture offset (ogni 30 min)"],
+    ["home_devices", "mdi:devices", "elenco dei dispositivi, ogni ora"],
+    ["offset_full_sync", "mdi:thermometer-lines", "offset di ogni valvola, ogni ora"],
+    ["offset_refresh", "mdi:refresh", "ricontrollo di un offset, ogni 30 min"],
     ["heating_circuits", "mdi:pipe", "circuiti di riscaldamento"],
   ];
   const TQ_GREEN = "#43a047";
@@ -1455,6 +1455,8 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .row .n { flex: 1; min-width: 0; }
           .row .x { font-variant-numeric: tabular-nums; white-space: nowrap; }
           .row.sub { padding-left: 30px; font-size: .92em; color: var(--secondary-text-color); }
+          .note { padding: 0 2px 6px 32px; margin-top: -4px; font-size: .82em; line-height: 1.35;
+                  color: var(--secondary-text-color); }
           .bar { height: 8px; border-radius: 4px; overflow: hidden; display:flex; margin: 6px 2px 4px;
                  background: color-mix(in srgb, var(--primary-text-color) 10%, transparent); }
           .bar span { height: 100%; }
@@ -1473,7 +1475,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           </div>
           <div class="sec">Dettaglio</div>
           <div class="detail"></div>
-          <div class="sec">Da dove arrivano le chiamate</div>
+          <div class="sec srcsec">Chi ha usato le chiamate</div>
           <div class="bar"></div>
           <div class="legend"></div>
           <div class="sources"></div>
@@ -1483,7 +1485,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       this._e = {
         title: $(".title"), badge: $(".badge"), dot: $(".dot"), mtxt: $(".mtxt"), reset: $(".reset"),
         g1: $(".g1"), g2: $(".g2"), v1: $(".v1"), v2: $(".v2"),
-        detail: $(".detail"), bar: $(".bar"), legend: $(".legend"), sources: $(".sources"), graph: $(".graph"),
+        detail: $(".detail"), srcsec: $(".srcsec"), bar: $(".bar"), legend: $(".legend"), sources: $(".sources"), graph: $(".graph"),
       };
       this.shadowRoot.addEventListener("click", (ev) => {
         const el = ev.target.closest("[data-k]");
@@ -1546,6 +1548,9 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         if (mins !== null) resetTxt += ` (tra ${Math.floor(mins / 60)} h ${Math.round(mins % 60)} min)`;
       }
       e.reset.textContent = resetTxt;
+      e.srcsec.textContent = resetS && !isNaN(Date.parse(resetS.state))
+        ? `Chi ha usato le chiamate (dalle ${new Date(resetS.state).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})`
+        : "Chi ha usato le chiamate";
 
       const pct = tqNum(this._st("quota_percent"));
       const rem = tqNum(this._st("quota_remaining"));
@@ -1579,36 +1584,43 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       const ownN = own ? n(own.attributes.since_quota_reset ?? own.state) : 0;
       const parts = [
         { k: "tado_ce_tracked", label: "Tado CE", v: n(ce && ce.state), color: "#1e88e5" },
-        { k: "tado_ce_untracked", label: "Tado CE non contate", v: n(hid && hid.state), color: "#64b5f6", show: ok(hid) },
-        { k: "api_calls_today", label: "Offset", v: ownN, color: "#ff8a3d" },
-        { k: "tado_ce_offset_services", label: "Offset manuali", v: n(svc && svc.state), color: "#fdd835", show: ok(svc) },
+        { k: "tado_ce_untracked", label: "Tado CE extra", v: n(hid && hid.state), color: "#64b5f6", show: ok(hid) },
+        { k: "api_calls_today", label: "Offset automatico", v: ownN, color: "#ff8a3d" },
+        { k: "tado_ce_offset_services", label: "Offset a mano", v: n(svc && svc.state), color: "#fdd835", show: ok(svc) },
         { k: "unexplained_calls", label: "Sconosciute", v: n(unk && unk.state), color: "#8e24aa" },
       ].filter((p) => p.show !== false);
       const tot = parts.reduce((a, p) => a + p.v, 0);
       e.bar.innerHTML = tot ? parts.filter((p) => p.v).map((p) => `<span style="width:${(p.v / tot) * 100}%;background:${p.color}"></span>`).join("") : "";
       e.legend.innerHTML = parts.map((p) => `<span><i style="background:${p.color}"></i>${tqEsc(p.label)} ${p.v}</span>`).join("");
 
-      let src = this._row("tado_ce_tracked", "mdi:home-thermometer", "Aggiornamenti di Tado CE", fmt(ce));
+      const note = (t) => `<div class="note">${tqEsc(t)}</div>`;
+      let src = this._row("tado_ce_tracked", "mdi:home-thermometer", "Tado CE", fmt(ce)) +
+        note("Tado CE legge e comanda le valvole dal cloud. Queste le conta da solo.");
       const known = new Set(TQ_TRACKED_TYPES.map((t) => t[0]));
       const byType = ca.by_type || {};
       [...TQ_TRACKED_TYPES, ...Object.keys(byType).filter((k) => !known.has(k)).map((k) => [k, "mdi:api", k])]
         .forEach(([a, icon, label]) => {
           const v = byType[a] ?? ca[a];
-          if (v) src += this._row("tado_ce_tracked", icon, `di cui ${label}`, String(v), true);
+          if (v) src += this._row("tado_ce_tracked", icon, label, String(v), true);
         });
       if (ok(hid)) {
-        src += this._row("tado_ce_untracked", "mdi:eye-off-outline", "Tado CE, non contate (stima)", fmt(hid));
+        src += this._row("tado_ce_untracked", "mdi:eye-off-outline", "Tado CE, controlli extra", fmt(hid)) +
+          note("Le fa sempre Tado CE, ma non le segna nel suo contatore: le calcoliamo dai suoi aggiornamenti (stima).");
         TQ_UNTRACKED_TYPES.forEach(([a, icon, label]) => {
-          if (n(ha[a])) src += this._row("tado_ce_untracked", icon, `di cui ${label}`, String(ha[a]), true);
+          if (n(ha[a])) src += this._row("tado_ce_untracked", icon, label, String(ha[a]), true);
         });
       }
-      src += this._row("api_calls_today", "mdi:thermometer-auto", "Gestione offset (dal reset)", own ? String(ownN) : "--");
-      if (ok(svc)) src += this._row("tado_ce_offset_services", "mdi:gesture-tap", "Offset via Tado CE (manuali / automazioni)", fmt(svc));
+      src += this._row("api_calls_today", "mdi:thermometer-auto", "Offset automatico", own ? String(ownN) : "--") +
+        note("Letture e scritture dell'offset fatte da Tado Heating Manager.");
+      if (ok(svc)) {
+        src += this._row("tado_ce_offset_services", "mdi:gesture-tap", "Offset a mano o da automazioni", fmt(svc)) +
+          note("Offset cambiati con i servizi di Tado CE (interfaccia, automazioni, script).");
+      }
       const syncZones = (unk && unk.attributes && unk.attributes.tado_ce_offset_sync_zones) || [];
-      src += this._row("unexplained_calls", "mdi:help-network",
-        syncZones.length
-          ? `Sconosciute (probabile Offset Sync di Tado CE, zone ${syncZones.join(", ")})`
-          : "Sconosciute (altre app / integrazioni)", fmt(unk));
+      src += this._row("unexplained_calls", "mdi:help-network", "Sconosciute", fmt(unk)) +
+        note(syncZones.length
+          ? `Probabilmente l'Offset Sync di Tado CE, acceso sulle zone ${syncZones.join(", ")}.`
+          : "Il resto: altre app o integrazioni collegate allo stesso account Tado.");
       e.sources.innerHTML = src;
     }
   }
