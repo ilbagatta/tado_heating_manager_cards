@@ -14,8 +14,8 @@ Il file contiene sette card, ognuna dentro un blocco `{ ... }` (le costanti non 
 `heating-planner-card` (HP_*), `heating-radiator-card` (HR_*), `heating-radiators-card` (una `heating-radiator-card`
 per stanza di `sensor.hp_all_rooms`; entrambe con `layout: tile` = blocchi come le tessere del riepilogo, `_buildTile`/`_updateTile`, griglia `columns: 4`; `heating-radiators-card` ha `columns: 2|3` per i blocchi, predefinito automatico), `heating-summary-card` (HS_*, riepilogo per la Home: tessere delle stanze,
 prossimo cambio, quota trovata come nella card della quota; al tocco `navigation_path`, predefinito `/tado-heating`), `heating-ac-card` (AC_*), `heating-acs-card` (una `heating-ac-card` per climatizzatore: `entities` o, se vuoto, i climate con
-`cool`/`dry`/`fan_only` non nascosti, per nome; `layout`, `columns`, `exclude`, `names` come `heating-radiators-card`;
-lista e colonne condivise in `THM_LIST_CSS`/`THM_COLUMNS_SELECTOR`/`thmColumns`), `tado-quota-card` (TQ_*).
+`cool`/`dry`/`fan_only` non nascosti, per nome; `layout`, `columns`, `order`, `exclude`, `names` come `heating-radiators-card`;
+lista, colonne e ordine (`order`: questi per primi, solo nella card) condivisi in `THM_LIST_CSS`/`THM_COLUMNS_SELECTOR`/`thmColumns`/`thmOrder`), `tado-quota-card` (TQ_*).
 Editor visuale: `static getConfigForm()` (schema `ha-form` disegnato da HA, nessun elemento editor) su tutte.
 `heating-radiator-card` usa `this._cfg` = config + valori presi dalla stanza con lo stesso climate
 (`name`, `thermometer`, `valve_temperature`, `fan`; l'offset da `offset_entity`), ricalcolata a ogni `hass`.
@@ -48,7 +48,8 @@ passa un `hass` finto (`states` + `entities`), con `ha-card`/`ha-icon` finti def
 
 Repository pubblico `ilbagatta/tado_heating_manager_cards` (tipo HACS "Dashboard": `hacs.json` + `dist/`).
 Per una nuova versione: alza `THM_CARDS_VERSION`, commit, tag `v<versione>` e release GitHub
-(`gh release create v<versione> --generate-notes`): HACS propone l'aggiornamento solo con una nuova release.
+(`gh release create v<versione> --title v<versione> --notes "<frase breve della modifica>\n\n[Modifiche](https://github.com/ilbagatta/tado_heating_manager_cards/compare/v<precedente>...v<versione>)"`;
+mai `--generate-notes`: l'utente vuole solo una breve descrizione e al massimo il link): HACS propone l'aggiornamento solo con una nuova release.
 Niente dati delle installazioni reali nel repository (host, IP, entita' personali).
 
 ## Deploy

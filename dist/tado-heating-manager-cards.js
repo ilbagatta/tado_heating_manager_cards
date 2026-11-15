@@ -13,7 +13,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.12.0";
+const THM_CARDS_VERSION = "2.13.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -46,6 +46,15 @@ const THM_LIST_CSS = `
           .list.tile.c3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
           .list.tile ha-card.empty { grid-column: 1 / -1; }
           ha-card.empty { padding: 16px; color: var(--secondary-text-color); }`;
+
+// Ordine scelto nella card: prima gli id di `order` (nell'ordine dato), poi gli altri nell'ordine di partenza.
+const thmOrder = (ids, order) => {
+  const pos = new Map();
+  (Array.isArray(order) ? order : []).forEach((id, i) => id && !pos.has(id) && pos.set(id, i));
+  const rank = (id) => (pos.has(id) ? pos.get(id) : Infinity);
+  return ids.map((id, i) => [id, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map((x) => x[0]);
+};
+const THM_ORDER_HELPER = "Questi per primi, nell'ordine dell'elenco; gli altri dopo. Solo in questa card.";
 
 const THM_EMPTY_BTN =
   '<button class="thm-cfg" style="margin-top:10px;padding:8px 14px;border-radius:8px;border:1px solid var(--primary-color);background:none;color:var(--primary-color);cursor:pointer;font-size:.95em">Aggiungi le stanze</button>';
@@ -1389,6 +1398,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   /* Heating Radiators card: una heating-radiator-card per ogni stanza di Tado Heating Manager, nell'ordine delle stanze.
    * Uso:  type: custom:heating-radiators-card
    *       exclude: [climate.xxx]   # opzionale: stanze da non mostrare
+   *       order: [climate.yyy]     # opzionale: questi per primi, in quest'ordine (gli altri nell'ordine delle stanze)
    *       layout: tile             # opzionale: blocchi affiancati invece delle righe
    *       columns: 3               # opzionale, solo con layout: tile: blocchi per riga (2 o 3; predefinito: automatico)
    *       names:                   # opzionale: nome mostrato al posto di quello della stanza
@@ -1427,6 +1437,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         schema: [
           { name: "layout", selector: window.THM_HR_LAYOUT_SELECTOR },
           { name: "columns", selector: THM_COLUMNS_SELECTOR },
+          { name: "order", selector: { entity: { domain: "climate", multiple: true } } },
           { name: "exclude", selector: { entity: { domain: "climate", multiple: true } } },
           {
             name: "names",
@@ -1445,6 +1456,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         computeLabel: (s) =>
           ({
             exclude: "Stanze da non mostrare",
+            order: "Ordine",
             layout: "Aspetto",
             columns: "Colonne dei blocchi",
             names: "Nomi personalizzati",
@@ -1452,6 +1464,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         computeHelper: (s) =>
           ({
             columns: THM_COLUMNS_HELPER,
+            order: THM_ORDER_HELPER,
             exclude: "Le altre stanze di Tado Heating Manager compaiono da sole, nell'ordine delle stanze.",
             names: "Solo in questa card. Le stanze non elencate usano il nome di Tado Heating Manager.",
           }[s.name]),
@@ -1462,7 +1475,9 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       const st = this._hass.states["sensor.hp_all_rooms"];
       const rooms = (st && st.attributes.rooms) || [];
       const skip = new Set(this._config.exclude || []);
-      return rooms.filter((r) => r.climate && !skip.has(r.climate));
+      const list = rooms.filter((r) => r.climate && !skip.has(r.climate));
+      const byId = new Map(list.map((r) => [r.climate, r]));
+      return thmOrder(list.map((r) => r.climate), this._config.order).map((id) => byId.get(id));
     }
 
     // Nomi personalizzati: elenco [{entity, name}] (editor) o mappa {climate: nome} (YAML).
@@ -2862,6 +2877,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
    * Uso:  type: custom:heating-acs-card
    *       entities: [climate.xxx]  # opzionale: solo questi, in quest'ordine (predefinito: trovati da soli)
    *       exclude: [climate.yyy]   # opzionale: climatizzatori da non mostrare
+   *       order: [climate.zzz]     # opzionale: questi per primi, in quest'ordine (gli altri per nome)
    *       layout: tile             # opzionale: blocchi affiancati invece delle righe
    *       columns: 3               # opzionale, solo con layout: tile: blocchi per riga (2 o 3; predefinito: automatico)
    *       names:                   # opzionale: nome mostrato al posto di quello del climatizzatore
@@ -2904,6 +2920,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           { name: "layout", selector: window.THM_HR_LAYOUT_SELECTOR },
           { name: "columns", selector: THM_COLUMNS_SELECTOR },
           { name: "entities", selector: { entity: { domain: "climate", multiple: true } } },
+          { name: "order", selector: { entity: { domain: "climate", multiple: true } } },
           { name: "exclude", selector: { entity: { domain: "climate", multiple: true } } },
           {
             name: "names",
@@ -2924,6 +2941,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
             layout: "Aspetto",
             columns: "Colonne dei blocchi",
             entities: "Climatizzatori da mostrare",
+            order: "Ordine",
             exclude: "Climatizzatori da non mostrare",
             names: "Nomi personalizzati",
           }[s.name] || s.name),
@@ -2931,6 +2949,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           ({
             columns: THM_COLUMNS_HELPER,
             entities: "Vuoto: tutti i climate con modalità freddo, deumidifica o ventola, in ordine di nome.",
+            order: THM_ORDER_HELPER,
             names: "Solo in questa card. Gli altri usano il nome della stanza o del climate.",
           }[s.name]),
       };
@@ -2944,9 +2963,9 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     _acs() {
       const skip = new Set(this._config.exclude || []);
       const chosen = Array.isArray(this._config.entities) ? this._config.entities.filter(Boolean) : [];
-      if (chosen.length) return chosen.filter((id) => !skip.has(id));
+      if (chosen.length) return thmOrder(chosen.filter((id) => !skip.has(id)), this._config.order);
       const reg = this._hass.entities || {};
-      return Object.keys(this._hass.states)
+      const found = Object.keys(this._hass.states)
         .filter((id) => {
           if (!id.startsWith("climate.") || skip.has(id)) return false;
           if (reg[id] && reg[id].hidden) return false;
@@ -2954,6 +2973,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           return modes.some((m) => ACS_MODES.includes(m));
         })
         .sort((a, b) => this._name(a).localeCompare(this._name(b), "it"));
+      return thmOrder(found, this._config.order);
     }
 
     // Nomi personalizzati: elenco [{entity, name}] (editor) o mappa {climate: nome} (YAML).
