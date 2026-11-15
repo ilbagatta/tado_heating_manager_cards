@@ -12,7 +12,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.9.2";
+const THM_CARDS_VERSION = "2.9.3";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1597,7 +1597,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .avg .v { font-size: 26px; font-weight: 300; line-height: 1; letter-spacing: -.5px; }
           .avg .v small { font-size: 14px; margin-left: 1px; }
           .avg .l { font-size: 11px; color: var(--secondary-text-color); margin-top: 3px; }
-          .rooms { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin-top: 14px; }
+          .rooms { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
           .room {
             border-radius: 14px; padding: 10px 11px; background: rgba(128,128,128,.10); border: 1.5px solid transparent;
             min-width: 0; transition: all .4s ease;

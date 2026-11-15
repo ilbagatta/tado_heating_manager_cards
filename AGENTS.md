@@ -7,7 +7,7 @@ Card Lovelace dell'integrazione Tado Heating Manager (progetto `../tado_heating_
 ```
 dist/tado-heating-manager-cards.js   unico file servito (HACS "Dashboard" o /config/www)
 hacs.json                            filename = tado-heating-manager-cards.js
-tools/deploy.sh, bump_resource.py    deploy manuale con aggiornamento automatico di ?v=
+tools/bump_resource.py               aggiorna ?v= della risorsa Lovelace (installazione manuale)
 ```
 
 Il file contiene sei card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
@@ -48,9 +48,10 @@ Niente dati delle installazioni reali nel repository (host, IP, entita' personal
 
 ## Deploy
 
-`tools/deploy.sh <host>` (chiedi conferma all'utente prima di scrivere): copia `dist/tado-heating-manager-cards.js` in
-`/config/www/` e con `tools/bump_resource.py` (eseguito sul server, WebSocket del Supervisor, solo libreria standard) porta
-la risorsa Lovelace a `?v=<THM_CARDS_VERSION>` (la crea se manca). Non serve riavviare HA: basta un refresh normale.
+Le installazioni dell'utente usano le card da **HACS**: si aggiornano solo con una nuova release (sopra).
+`tools/bump_resource.py` (installazione manuale, eseguito sul server con
+`ssh root@<host> python3 - <versione> < tools/bump_resource.py`; chiedi conferma prima di scrivere) porta la risorsa
+Lovelace a `?v=<versione>` (la crea se manca).
 
 ## Card rimandate
 

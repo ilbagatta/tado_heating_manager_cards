@@ -39,7 +39,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.9.2`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.9.3`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -51,8 +51,6 @@ continuano a funzionare con la stessa configurazione.
 ## Aggiornare
 
 - **HACS**: quando esce una nuova release HACS la propone; aggiorna e ricarica la dashboard.
-- **Script** (sviluppo, con l'add-on SSH): `tools/deploy.sh <host>` copia il file e aggiorna da solo `?v=` della risorsa;
-  poi basta ricaricare la dashboard.
 - **Manuale**: sostituisci il file in `/config/www/`, poi alza `?v=` nella risorsa (es. `?v=2.0.2`) **oppure** ricarica la
   pagina con la cache svuotata (Ctrl+F5; nell'app: Impostazioni app → Debug → Reset frontend cache).
 
