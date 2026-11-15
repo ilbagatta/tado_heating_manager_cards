@@ -10,9 +10,10 @@ hacs.json                            filename = tado-heating-manager-cards.js
 tools/deploy.sh, bump_resource.py    deploy manuale con aggiornamento automatico di ?v=
 ```
 
-Il file contiene cinque card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
+Il file contiene sei card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
 `heating-planner-card` (HP_*), `heating-radiator-card` (HR_*), `heating-radiators-card` (una `heating-radiator-card`
-per stanza di `sensor.hp_all_rooms`), `heating-ac-card` (AC_*), `tado-quota-card` (TQ_*).
+per stanza di `sensor.hp_all_rooms`), `heating-summary-card` (HS_*, riepilogo per la Home: tessere delle stanze,
+prossimo cambio, quota trovata come nella card della quota; al tocco `navigation_path`, predefinito `/tado-heating`), `heating-ac-card` (AC_*), `tado-quota-card` (TQ_*).
 Editor visuale: `static getConfigForm()` (schema `ha-form` disegnato da HA, nessun elemento editor) su tutte tranne
 `heating-ac-card`. `heating-radiator-card` usa `this._cfg` = config + valori presi dalla stanza con lo stesso climate
 (`name`, `thermometer`, `valve_temperature`, `fan`; l'offset da `offset_entity`), ricalcolata a ogni `hass`.

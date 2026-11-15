@@ -13,6 +13,7 @@ e quella della quota richiedono l'integrazione Tado Heating Manager.
 |---|---|
 | `custom:heating-planner-card` | Programmi a fasce di tutte le stanze, tab Feriali / Weekend, ordine delle stanze |
 | `custom:heating-radiator-card` | Riga di un termosifone (modo, temperatura, offset, popup con grafico) |
+| `custom:heating-summary-card` | Riepilogo per la Home: termosifoni, prossimo cambio, quota; un tocco apre la plancia Riscaldamento |
 | `custom:heating-radiators-card` | Una riga di termosifone per ogni stanza di Tado Heating Manager, aggiunta da sola |
 | `custom:heating-ac-card` | Riga di un climatizzatore |
 | `custom:tado-quota-card` | Quota API Tado: stato, indicatori, provenienza delle chiamate, grafico |
@@ -38,7 +39,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.7.0`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.8.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -94,6 +95,19 @@ La plancia "Riscaldamento" creata dall'integrazione usa invece righe separate (u
 
 Senza stanze, la card dei programmi e quella dei termosifoni mostrano il pulsante **Aggiungi le stanze**, che apre la
 pagina dell'integrazione. Se nessuna stanza ha fasce, la card dei programmi si apre su "Tutti (modifica)".
+
+```yaml
+type: custom:heating-summary-card
+title: Riscaldamento            # facoltativo
+navigation_path: /tado-heating  # facoltativo: plancia aperta al tocco
+show_planner: true              # facoltativo: prossimo cambio e stato dei programmi
+show_quota: true                # facoltativo: barra della quota (solo se ci sono i sensori)
+exclude:                        # facoltativo
+  - climate.termo_bagno
+```
+
+Una tessera per stanza (temperatura del termometro, obiettivo o "spento", prossimo cambio), quanti sono accesi e la
+media; lo sfondo si scalda quando un termosifone riscalda.
 
 ```yaml
 type: custom:heating-ac-card

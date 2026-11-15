@@ -1,9 +1,10 @@
 /* Tado Heating Manager Cards
  * Card Lovelace per l'integrazione Tado Heating Manager (custom_components/tado_heating_manager).
- * Un solo file con cinque card, senza dipendenze e senza build:
+ * Un solo file con sei card, senza dipendenze e senza build:
  *   custom:heating-planner-card    programmi a fasce di tutte le stanze (Feriali / Weekend)
  *   custom:heating-radiator-card   riga di un termosifone
  *   custom:heating-radiators-card  una riga per ogni termosifone di Tado Heating Manager
+ *   custom:heating-summary-card    riepilogo per la Home (termosifoni, programmi, quota); al tocco apre la plancia
  *   custom:heating-ac-card         riga di un climatizzatore
  *   custom:tado-quota-card         quota API Tado (stato, indicatori, provenienza delle chiamate, grafico)
  * Ogni card e' racchiusa in un blocco { } cosi' le costanti non si scontrano.
@@ -11,7 +12,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.7.0";
+const THM_CARDS_VERSION = "2.8.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1239,6 +1240,306 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     type: "heating-radiators-card",
     name: "Heating Radiators",
     description: "Una riga per ogni termosifone di Tado Heating Manager, aggiunta da sola.",
+  });
+}
+
+// ===== heating-summary-card.js =====
+{
+  /* Heating Summary card: riepilogo per la Home (termosifoni, programmi, quota). Un tocco apre la plancia Riscaldamento.
+   * Uso:  type: custom:heating-summary-card
+   *       title: Riscaldamento          # facoltativo
+   *       navigation_path: /tado-heating # facoltativo: plancia aperta al tocco
+   *       show_planner: true             # facoltativo: prossimo cambio dei programmi
+   *       show_quota: true               # facoltativo: barra della quota Tado (se ci sono i sensori)
+   *       exclude: [climate.xxx]         # facoltativo
+   */
+  const HS_ORANGE = "#ff8a3d";
+  const HS_GREEN = "#4caf50";
+  const HS_RED = "#e53935";
+  const HS_PLATFORM = "tado_heating_manager";
+  const HS_QUOTA_LEGACY = {
+    quota_status: "sensor.system_tado_offset_manager_quota_tado_stato",
+    quota_percent: "sensor.system_tado_offset_manager_quota_tado_usata",
+    quota_remaining: "sensor.system_tado_offset_manager_quota_tado_residue",
+    quota_reset: "sensor.system_tado_offset_manager_quota_tado_prossimo_reset",
+  };
+  const HS_DAYS = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"];
+  const hsEsc = (s) =>
+    String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const hsNum = (v) => (v === undefined || v === null || v === "" || isNaN(Number(v)) ? null : Number(v));
+  const hsTemp = (v) => (v === null ? "--" : v.toFixed(1));
+  const hsTime = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d)) return "";
+    const hh = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return hh;
+    return `${HS_DAYS[d.getDay()]} ${hh}`;
+  };
+  const hsShortValue = (v) => (!v ? "" : v === "Spento" ? "spento" : String(v).replace(" °C", "°"));
+
+  class HeatingSummaryCard extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+      this._sig = "";
+    }
+
+    setConfig(config) {
+      this._config = { title: "Riscaldamento", navigation_path: "/tado-heating", show_planner: true, show_quota: true, ...(config || {}) };
+      this._sig = "";
+      this._quotaIds = null;
+      this._build();
+    }
+
+    getCardSize() {
+      return 4;
+    }
+
+    getGridOptions() {
+      return { columns: 12, min_columns: 6 };
+    }
+
+    static getStubConfig() {
+      return {};
+    }
+
+    static getConfigForm() {
+      return {
+        schema: [
+          { name: "title", selector: { text: {} } },
+          { name: "navigation_path", selector: { text: {} } },
+          {
+            type: "grid", name: "", flatten: true,
+            schema: [
+              { name: "show_planner", selector: { boolean: {} } },
+              { name: "show_quota", selector: { boolean: {} } },
+            ],
+          },
+          { name: "exclude", selector: { entity: { domain: "climate", multiple: true } } },
+        ],
+        computeLabel: (s) =>
+          ({ title: "Titolo", navigation_path: "Plancia da aprire", show_planner: "Prossimo cambio", show_quota: "Quota Tado", exclude: "Stanze da non mostrare" }[s.name] || s.name),
+        computeHelper: (s) => (s.name === "navigation_path" ? "Vuoto: /tado-heating (la plancia creata da Tado Heating Manager)." : undefined),
+      };
+    }
+
+    _st(id) {
+      return id && this._hass ? this._hass.states[id] : undefined;
+    }
+
+    _rooms() {
+      const st = this._st("sensor.hp_all_rooms");
+      const skip = new Set(this._config.exclude || []);
+      return ((st && st.attributes.rooms) || []).filter((r) => r.climate && !skip.has(r.climate));
+    }
+
+    // sensori della quota: registro (piattaforma + chiave) > nomi storici
+    _resolveQuota() {
+      const reg = this._hass.entities || {};
+      const found = {};
+      Object.values(reg).forEach((e) => {
+        if (e.platform === HS_PLATFORM && e.translation_key && e.entity_id.startsWith("sensor.")) found[e.translation_key] = e.entity_id;
+      });
+      const out = {};
+      Object.keys(HS_QUOTA_LEGACY).forEach((k) => (out[k] = found[k] || HS_QUOTA_LEGACY[k]));
+      this._quotaFromReg = Object.keys(reg).length > 0;
+      return out;
+    }
+
+    set hass(hass) {
+      this._hass = hass;
+      if (!this._config) return;
+      if (!this._quotaIds || !this._quotaFromReg) this._quotaIds = this._resolveQuota();
+      const ids = ["sensor.hp_all_rooms", "switch.hp_all_enabled", ...Object.values(this._quotaIds)];
+      this._rooms().forEach((r) => ids.push(r.climate, r.thermometer, `sensor.hp_${r.slug}_current`, `switch.hp_${r.slug}_enabled`));
+      const sig = ids.map((id) => {
+        const s = this._st(id);
+        return s ? s.state + JSON.stringify(s.attributes) : "-";
+      }).join("|");
+      if (sig === this._sig) return;
+      this._sig = sig;
+      this._update();
+    }
+
+    _build() {
+      this.shadowRoot.innerHTML = `
+        <style>
+          :host { display: block; }
+          ha-card {
+            position: relative; overflow: hidden; cursor: pointer; padding: 16px; border-radius: var(--ha-card-border-radius, 16px);
+            color: var(--primary-text-color); transition: background .6s ease;
+          }
+          ha-card::before {
+            content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .6s ease;
+            background: radial-gradient(120% 90% at 0% 0%, rgba(255,138,61,.28), rgba(255,138,61,0) 60%);
+          }
+          ha-card.warm::before { opacity: 1; }
+          .head { position: relative; display: flex; align-items: center; gap: 12px; }
+          .hicon {
+            width: 44px; height: 44px; border-radius: 14px; flex: none; display: flex; align-items: center; justify-content: center;
+            background: rgba(128,128,128,.18); color: var(--secondary-text-color); --mdc-icon-size: 24px; transition: all .4s ease;
+          }
+          ha-card.warm .hicon { background: rgba(255,138,61,.22); color: ${HS_ORANGE}; }
+          ha-card.warm .hicon ha-icon { animation: hs-flicker 1s ease-in-out infinite; transform-origin: 50% 90%; }
+          .htxt { min-width: 0; flex: 1; }
+          .title { font-size: 17px; font-weight: 600; line-height: 1.2; }
+          .sub { font-size: 12.5px; color: var(--secondary-text-color); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .avg { text-align: right; flex: none; }
+          .avg .v { font-size: 26px; font-weight: 300; line-height: 1; letter-spacing: -.5px; }
+          .avg .v small { font-size: 14px; margin-left: 1px; }
+          .avg .l { font-size: 11px; color: var(--secondary-text-color); margin-top: 3px; }
+          .rooms { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin-top: 14px; }
+          .room {
+            border-radius: 14px; padding: 10px 11px; background: rgba(128,128,128,.10); border: 1.5px solid transparent;
+            min-width: 0; transition: all .4s ease;
+          }
+          .room.on { border-color: rgba(255,138,61,.35); }
+          .room.heating { background: rgba(255,122,40,.16); border-color: rgba(255,138,61,.6); }
+          .room.auto { border-color: rgba(76,175,80,.55); }
+          .room.off { opacity: .72; }
+          .rtop { display: flex; align-items: center; gap: 6px; }
+          .rname { font-size: 13px; font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .rflame { --mdc-icon-size: 16px; color: ${HS_ORANGE}; display: none; transform-origin: 50% 90%; }
+          .room.heating .rflame { display: inline-flex; animation: hs-flicker .9s ease-in-out infinite; }
+          .rtemp { font-size: 22px; font-weight: 400; margin-top: 4px; line-height: 1.1; }
+          .rsub { font-size: 11.5px; color: var(--secondary-text-color); margin-top: 2px; white-space: nowrap; }
+          .room.heating .rsub { color: ${HS_ORANGE}; }
+          .rnext { font-size: 11px; color: var(--secondary-text-color); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .rnext:empty { display: none; }
+          .foot { position: relative; display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+          .foot:empty { display: none; }
+          .line { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--secondary-text-color); min-width: 0; }
+          .line ha-icon { --mdc-icon-size: 18px; flex: none; }
+          .line .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .line b { color: var(--primary-text-color); font-weight: 600; }
+          .pill { flex: none; font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(128,128,128,.16); }
+          .pill.on { background: rgba(76,175,80,.18); color: ${HS_GREEN}; }
+          .bar { height: 6px; border-radius: 3px; background: rgba(128,128,128,.2); overflow: hidden; margin-top: 5px; }
+          .bar > div { height: 100%; border-radius: 3px; transition: width .6s ease, background .6s ease; }
+          .q { flex: 1; min-width: 0; }
+          .empty { position: relative; margin-top: 12px; font-size: 13px; color: var(--secondary-text-color); }
+          @keyframes hs-flicker {
+            0%, 100% { transform: scale(1, 1) rotate(0deg); }
+            25% { transform: scale(1.06, .94) rotate(-3deg); }
+            50% { transform: scale(.95, 1.07) rotate(2deg); }
+            75% { transform: scale(1.04, .97) rotate(-2deg); }
+          }
+          @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+        </style>
+        <ha-card tabindex="0" role="button">
+          <div class="head">
+            <div class="hicon"><ha-icon icon="mdi:fire"></ha-icon></div>
+            <div class="htxt"><div class="title"></div><div class="sub"></div></div>
+            <div class="avg"><div class="v"></div><div class="l">media</div></div>
+          </div>
+          <div class="rooms"></div>
+          <div class="foot"></div>
+        </ha-card>`;
+      const $ = (q) => this.shadowRoot.querySelector(q);
+      this._el = { card: $("ha-card"), title: $(".title"), sub: $(".sub"), avg: $(".avg .v"), avgWrap: $(".avg"), rooms: $(".rooms"), foot: $(".foot") };
+      const go = () => {
+        const path = this._config.navigation_path || "/tado-heating";
+        window.history.pushState(null, "", path);
+        window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+      };
+      this._el.card.addEventListener("click", go);
+      this._el.card.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(); }
+      });
+    }
+
+    _room(r) {
+      const c = this._st(r.climate);
+      const th = this._st(r.thermometer);
+      const temp = hsNum(th && th.state) ?? hsNum(c && c.attributes.current_temperature);
+      const bad = !c || c.state === "unavailable" || c.state === "unknown";
+      const off = bad || c.state === "off";
+      const heating = !off && c.attributes.hvac_action === "heating";
+      const target = off ? null : hsNum(c.attributes.temperature);
+      const cur = this._st(`sensor.hp_${r.slug}_current`);
+      const en = this._st(`switch.hp_${r.slug}_enabled`);
+      const planOn = !!en && en.state === "on";
+      const next = planOn && cur && cur.attributes.next_change
+        ? { when: cur.attributes.next_change, value: cur.attributes.next_value, name: r.name } : null;
+      return { r, c, temp, bad, off, heating, target, next, auto: !off && c.state === "auto" };
+    }
+
+    _update() {
+      if (!this._el || !this._hass) return;
+      const e = this._el;
+      const rooms = this._rooms().map((r) => this._room(r));
+      const on = rooms.filter((x) => !x.off).length;
+      const heating = rooms.filter((x) => x.heating).length;
+      const temps = rooms.map((x) => x.temp).filter((t) => t !== null);
+      const avg = temps.length ? temps.reduce((a, b) => a + b, 0) / temps.length : null;
+
+      e.card.classList.toggle("warm", heating > 0);
+      e.title.textContent = this._config.title || "Riscaldamento";
+      e.sub.textContent = !rooms.length
+        ? "Nessun termosifone"
+        : heating
+          ? `${heating} in riscaldamento · ${on} di ${rooms.length} accesi`
+          : on
+            ? `${on} di ${rooms.length} accesi · temperatura raggiunta`
+            : "Tutti spenti";
+      e.avgWrap.style.display = avg === null ? "none" : "";
+      e.avg.innerHTML = avg === null ? "" : `${avg.toFixed(1)}<small>°</small>`;
+
+      e.rooms.innerHTML = rooms.length
+        ? rooms.map((x) => {
+            const cls = ["room", x.off ? "off" : "on", x.heating ? "heating" : "", x.auto ? "auto" : ""].join(" ");
+            const sub = x.bad ? "non disponibile" : x.off ? "spento" : x.target !== null ? `obiettivo ${x.target.toFixed(1)}°` : "acceso";
+            const nxt = x.next ? `${hsTime(x.next.when)} → ${hsShortValue(x.next.value)}` : "";
+            return `<div class="${cls}">
+                <div class="rtop"><div class="rname">${hsEsc(x.r.name)}</div><ha-icon class="rflame" icon="mdi:fire"></ha-icon></div>
+                <div class="rtemp">${hsTemp(x.temp)}°</div>
+                <div class="rsub">${hsEsc(sub)}</div>
+                <div class="rnext">${hsEsc(nxt)}</div>
+              </div>`;
+          }).join("")
+        : `<div class="empty">Aggiungi le stanze in Tado Heating Manager.</div>`;
+
+      const foot = [];
+      if (this._config.show_planner && rooms.length) {
+        const hub = this._st("switch.hp_all_enabled");
+        const hubOn = !!hub && hub.state === "on";
+        const nexts = rooms.map((x) => x.next).filter(Boolean).sort((a, b) => new Date(a.when) - new Date(b.when));
+        const n = nexts[0];
+        const txt = !hubOn
+          ? "Programmi sospesi"
+          : n ? `Prossimo: <b>${hsEsc(n.name)}</b> ${hsEsc(hsShortValue(n.value))} · ${hsEsc(hsTime(n.when))}` : "Nessun cambio in programma";
+        foot.push(`<div class="line"><ha-icon icon="mdi:calendar-clock"></ha-icon><span class="t">${txt}</span>
+          <span class="pill ${hubOn ? "on" : ""}">${hubOn ? "Programmi attivi" : "Programmi spenti"}</span></div>`);
+      }
+      if (this._config.show_quota) {
+        const q = (k) => this._st(this._quotaIds[k]);
+        const pct = hsNum(q("quota_percent") && q("quota_percent").state);
+        if (pct !== null) {
+          const status = q("quota_status") ? q("quota_status").state : "ok";
+          const color = status === "critical" ? HS_RED : status === "warning" ? HS_ORANGE : HS_GREEN;
+          const rem = hsNum(q("quota_remaining") && q("quota_remaining").state);
+          const reset = q("quota_reset") ? hsTime(q("quota_reset").state) : "";
+          const parts = [rem !== null ? `${rem} residue` : "", reset ? `reset ${reset}` : ""].filter(Boolean).join(" · ");
+          foot.push(`<div class="line"><ha-icon icon="mdi:api" style="color:${color}"></ha-icon>
+            <div class="q"><div style="display:flex;gap:8px"><span class="t">Quota Tado <b>${pct.toFixed(0)}%</b></span><span>${hsEsc(parts)}</span></div>
+            <div class="bar"><div style="width:${Math.min(100, Math.max(0, pct))}%;background:${color}"></div></div></div></div>`);
+        }
+      }
+      e.foot.innerHTML = foot.join("");
+    }
+  }
+
+  if (!customElements.get("heating-summary-card")) {
+    customElements.define("heating-summary-card", HeatingSummaryCard);
+  }
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: "heating-summary-card",
+    name: "Heating Summary",
+    description: "Riepilogo del riscaldamento per la Home: termosifoni, programmi e quota. Un tocco apre la plancia.",
+    preview: true,
   });
 }
 
