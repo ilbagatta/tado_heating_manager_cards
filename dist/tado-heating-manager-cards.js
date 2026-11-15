@@ -11,7 +11,15 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.6.0";
+const THM_CARDS_VERSION = "2.7.0";
+// Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
+const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
+const thmOpenConfig = () => {
+  window.history.pushState(null, "", THM_CONFIG_PATH);
+  window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+};
+const THM_EMPTY_BTN =
+  '<button class="thm-cfg" style="margin-top:10px;padding:8px 14px;border-radius:8px;border:1px solid var(--primary-color);background:none;color:var(--primary-color);cursor:pointer;font-size:.95em">Aggiungi le stanze</button>';
 console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#fff;background:#ff8a3d;font-weight:600", "color:#ff8a3d");
 
 // ===== heating-planner-card.js =====
@@ -156,6 +164,11 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       if (!this._hass) return;
       if (!this._kind) this._kind = this._defaultKind();
       const allRooms = this._rooms();
+      // nessuna fascia in nessuna stanza (installazione nuova): il riepilogo sarebbe vuoto, si apre la modifica
+      if (!this._roomChosen && this._room === "summary" && allRooms.length && !allRooms.some((r) => {
+        const plan = this._state(`sensor.hp_${r.slug}_plan`);
+        return plan && ((plan.attributes.wd || []).length || (plan.attributes.we || []).length);
+      })) this._room = "all";
       if (this._room !== "summary" && this._room !== "all" && !allRooms.some((r) => r.slug === this._room)) this._room = "summary";
       const summary = this._room === "summary";
       const single = !summary && this._room !== "all";
@@ -322,10 +335,12 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
               .map(([key, label]) => `<button class="tab ${key === k ? "sel" : ""}" data-kind="${key}">${label}</button>`)
               .join("")}
           </div>`}
-          <div class="grid ${summary ? "compact" : ""}">${(summary ? summaryHtml : roomHtml) || '<div class="empty">Nessun termosifone configurato.</div>'}</div>`}
+          <div class="grid ${summary ? "compact" : ""}">${(summary ? summaryHtml : roomHtml) || `<div class="empty">Nessun termosifone configurato: aggiungi le stanze in Tado Heating Manager.<br>${THM_EMPTY_BTN}</div>`}</div>`}
         </ha-card>`;
 
       const root = this.shadowRoot;
+      const cfgBtn = root.querySelector(".thm-cfg");
+      if (cfgBtn) cfgBtn.addEventListener("click", thmOpenConfig);
       const titleEl = root.querySelector(".title");
       const toggleCollapse = () => {
         this._collapsed = !this._collapsed;
@@ -342,6 +357,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       if (sel) {
         sel.addEventListener("change", () => {
           this._room = sel.value;
+          this._roomChosen = true;
           // vista singola: apre il tipo di giorno di oggi (quello con la fascia attiva)
           const cur = this._room === "all" || this._room === "summary" ? null : this._state(`sensor.hp_${this._room}_current`);
           this._kind = (cur && cur.attributes.kind) || this._defaultKind();
@@ -1202,7 +1218,8 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       const list = this.shadowRoot.querySelector(".list");
       this._cards = [];
       if (!rooms.length) {
-        list.innerHTML = `<ha-card class="empty">Nessun termosifone: aggiungi le stanze in Tado Heating Manager.</ha-card>`;
+        list.innerHTML = `<ha-card class="empty">Nessun termosifone: aggiungi le stanze in Tado Heating Manager.<br>${THM_EMPTY_BTN}</ha-card>`;
+        list.querySelector(".thm-cfg").addEventListener("click", thmOpenConfig);
         return;
       }
       rooms.forEach((r) => {

@@ -16,6 +16,8 @@ per stanza di `sensor.hp_all_rooms`), `heating-ac-card` (AC_*), `tado-quota-card
 Editor visuale: `static getConfigForm()` (schema `ha-form` disegnato da HA, nessun elemento editor) su tutte tranne
 `heating-ac-card`. `heating-radiator-card` usa `this._cfg` = config + valori presi dalla stanza con lo stesso climate
 (`name`, `thermometer`, `valve_temperature`, `fan`; l'offset da `offset_entity`), ricalcolata a ogni `hass`.
+Senza stanze: pulsante "Aggiungi le stanze" (`thmOpenConfig`, `pushState` + `location-changed`) nel planner e in
+`heating-radiators-card`; planner senza fasce in nessuna stanza: si apre su "Tutti (modifica)".
 La card della quota trova i sensori da `hass.entities` (platform `tado_heating_manager` + `translation_key`, cioe' le
 chiavi di `HUB_KEYS`), poi ripiega sui nomi storici `sensor.system_tado_offset_manager_*`; il grafico usa la
 `history-graph` di HA (`loadCardHelpers`). Prova veloce senza HA: Chrome headless con una pagina che carica il file e

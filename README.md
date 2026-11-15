@@ -38,7 +38,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.6.0`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.7.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -90,6 +90,10 @@ exclude:                          # facoltativo: stanze da non mostrare
 ```
 
 Una `heating-radiator-card` per ogni stanza, nell'ordine delle stanze: le stanze nuove compaiono da sole.
+La plancia "Riscaldamento" creata dall'integrazione usa invece righe separate (una `heating-radiator-card` per stanza).
+
+Senza stanze, la card dei programmi e quella dei termosifoni mostrano il pulsante **Aggiungi le stanze**, che apre la
+pagina dell'integrazione. Se nessuna stanza ha fasce, la card dei programmi si apre su "Tutti (modifica)".
 
 ```yaml
 type: custom:heating-ac-card
