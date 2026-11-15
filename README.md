@@ -15,7 +15,7 @@ e quella della quota richiedono l'integrazione Tado Heating Manager.
 | `custom:heating-radiator-card` | Riga o blocco di un termosifone (modo, temperatura, valvola, offset, popup con grafico) |
 | `custom:heating-summary-card` | Riepilogo per la Home: termosifoni, prossimo cambio, quota; un tocco apre la plancia Riscaldamento |
 | `custom:heating-radiators-card` | Una riga (o un blocco) di termosifone per ogni stanza di Tado Heating Manager, aggiunta da sola |
-| `custom:heating-ac-card` | Riga di un climatizzatore |
+| `custom:heating-ac-card` | Riga o blocco di un climatizzatore (modo, oscillazione, velocità, temperatura, popup con grafico) |
 | `custom:tado-quota-card` | Quota API Tado: stato, indicatori, provenienza delle chiamate, grafico |
 
 Le card sono separate dall'integrazione: dopo una modifica basta **ricaricare la dashboard**, senza riavviare Home Assistant.
@@ -39,7 +39,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.9.6`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.10.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -58,7 +58,7 @@ Nella console del browser compare `TADO-HEATING-MANAGER-CARDS <versione>`: serve
 
 ## Configurazione
 
-Tutte le card (tranne quella del climatizzatore) si configurano anche dall'**editor visuale** di Home Assistant
+Tutte le card si configurano anche dall'**editor visuale** di Home Assistant
 (*Modifica dashboard → Aggiungi card → cerca "Heating" o "Tado"*), senza scrivere YAML.
 
 ```yaml
@@ -122,7 +122,20 @@ orari). Lo sfondo si scalda quando un termosifone riscalda.
 type: custom:heating-ac-card
 entity: climate.condizionatore_cucina   # obbligatorio
 name: Cucina                            # facoltativo
+layout: tile                            # facoltativo: blocco invece della riga
+temp_termometro: sensor.xxx             # facoltativo: temperatura ambiente (T:)
+fan: switch.ventola                     # facoltativo: ventilatore separato
+door: binary_sensor.porta               # facoltativo
 ```
+
+Stesse funzioni di `heating-radiator-card`: riga o blocco (`layout: tile`), editor visuale, menu della modalità sul
+tasto della modalità e menu dell'oscillazione sul suo tasto, −/+ con il passo e i limiti del climatizzatore, umidità se
+il climate la espone, ventola come icona accanto al nome. Bordo colorato attenuato quando la modalità è attiva, pieno e
+con sfondo quando lavora (`hvac_action`). Un tocco apre il popup con modalità, velocità (`fan_modes`), oscillazione,
+ventola, porta e grafico (temperatura, target e bande di raffreddamento/riscaldamento); la pressione lunga sui tasti apre
+i dettagli. Da spento il target resta visibile attenuato (o "Spento" se il climate non lo conserva) e −/+ cambiano solo
+il target, senza accendere. Se il climatizzatore è il `climate` di una stanza di Tado Heating Manager, nome, termometro
+e ventola lasciati vuoti si prendono dalla stanza.
 
 ```yaml
 type: custom:tado-quota-card

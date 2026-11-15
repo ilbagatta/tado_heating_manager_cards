@@ -14,9 +14,12 @@ Il file contiene sei card, ognuna dentro un blocco `{ ... }` (le costanti non si
 `heating-planner-card` (HP_*), `heating-radiator-card` (HR_*), `heating-radiators-card` (una `heating-radiator-card`
 per stanza di `sensor.hp_all_rooms`; entrambe con `layout: tile` = blocchi come le tessere del riepilogo, `_buildTile`/`_updateTile`, griglia `columns: 4`), `heating-summary-card` (HS_*, riepilogo per la Home: tessere delle stanze,
 prossimo cambio, quota trovata come nella card della quota; al tocco `navigation_path`, predefinito `/tado-heating`), `heating-ac-card` (AC_*), `tado-quota-card` (TQ_*).
-Editor visuale: `static getConfigForm()` (schema `ha-form` disegnato da HA, nessun elemento editor) su tutte tranne
-`heating-ac-card`. `heating-radiator-card` usa `this._cfg` = config + valori presi dalla stanza con lo stesso climate
+Editor visuale: `static getConfigForm()` (schema `ha-form` disegnato da HA, nessun elemento editor) su tutte.
+`heating-radiator-card` usa `this._cfg` = config + valori presi dalla stanza con lo stesso climate
 (`name`, `thermometer`, `valve_temperature`, `fan`; l'offset da `offset_entity`), ricalcolata a ogni `hass`.
+`heating-ac-card` (2.10.0) ha la stessa struttura (riga/`layout: tile`, popup con grafico, menu, pressione lunga,
+`this._cfg` da `name`/`thermometer`/`fan` della stanza) senza valvola e offset; in piu' oscillazione, velocita'
+(`fan_modes`) e umidita'; ventola come icona accanto al nome (tre tasti tondi non stanno a 358 px).
 Senza stanze: pulsante "Aggiungi le stanze" (`thmOpenConfig`, `pushState` + `location-changed`) nel planner e in
 `heating-radiators-card`; planner senza fasce in nessuna stanza: si apre su "Tutti (modifica)".
 La card della quota trova i sensori da `hass.entities` (platform `tado_heating_manager` + `translation_key`, cioe' le

@@ -5,14 +5,14 @@
  *   custom:heating-radiator-card   riga (o blocco, layout: tile) di un termosifone
  *   custom:heating-radiators-card  una riga per ogni termosifone di Tado Heating Manager
  *   custom:heating-summary-card    riepilogo per la Home (termosifoni, programmi, quota); al tocco apre la plancia
- *   custom:heating-ac-card         riga di un climatizzatore
+ *   custom:heating-ac-card         riga (o blocco, layout: tile) di un climatizzatore
  *   custom:tado-quota-card         quota API Tado (stato, indicatori, provenienza delle chiamate, grafico)
  * Ogni card e' racchiusa in un blocco { } cosi' le costanti non si scontrano.
  *
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.9.6";
+const THM_CARDS_VERSION = "2.10.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1828,104 +1828,78 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
 
 // ===== heating-ac-card.js =====
 {
-  /* Heating AC card: riga compatta per un climatizzatore (sostituisce il button-card "clima_row").
+  /* Heating AC card: climatizzatore a riga o a blocco, con le stesse funzioni di heating-radiator-card.
    * Uso:
    *   type: custom:heating-ac-card
    *   entity: climate.condizionatore_cucina
    *   name: Cucina                 # opzionale
-   * Non richiede button-card.
+   *   layout: tile                 # opzionale: blocco come nel riepilogo (predefinito: riga)
+   *   temp_termometro: sensor.xxx  # opzionale: temperatura ambiente (al posto di current_temperature)
+   *   fan: switch.ventola          # opzionale: ventilatore separato (icona accanto al nome)
+   *   door: binary_sensor.porta    # opzionale: porta/finestra aperta (nel popup)
+   * I campi lasciati vuoti si prendono dalla stanza di Tado Heating Manager con lo stesso climate, se c'e'
+   * (nome, termometro, ventola). Configurabile anche dall'editor visuale.
+   * Un tocco sul corpo apre un popup con modalita', velocita', oscillazione, interruttori e grafico;
+   * la pressione lunga sui tasti apre i dettagli di HA. Non richiede button-card.
    */
-  const AC_LABEL = { off: "Spento", cool: "Freddo", heat: "Caldo", dry: "Deumidifica", fan_only: "Ventola", heat_cool: "Auto" };
+  const AC_ORDER = ["heat_cool", "auto", "cool", "heat", "dry", "fan_only", "off"];
+  const AC_LABEL = {
+    off: "Spento", cool: "Freddo", heat: "Caldo", dry: "Deumidifica", fan_only: "Ventola", heat_cool: "Auto", auto: "Auto",
+  };
   const AC_ICON = {
     off: "mdi:power", cool: "mdi:snowflake", heat: "mdi:fire", dry: "mdi:water-percent",
-    fan_only: "mdi:fan", heat_cool: "mdi:sun-snowflake-variant",
+    fan_only: "mdi:fan", heat_cool: "mdi:sun-snowflake-variant", auto: "mdi:thermostat-auto",
   };
-  const AC_COLOR = { cool: "#29b6f6", heat: "#ff8a3d", dry: "#26a69a", fan_only: "#90a4ae", heat_cool: "#4caf50" };
-  const AC_TINT = { cool: "rgba(41,182,246,.24)", heat: "rgba(255,122,40,.24)", dry: "rgba(38,166,154,.24)" };
+  const AC_COLOR = {
+    cool: "#29b6f6", heat: "#ff8a3d", dry: "#26a69a", fan_only: "#90a4ae", heat_cool: "#4caf50", auto: "#4caf50",
+  };
+  // attivita' in corso (hvac_action): colore del bordo, dello sfondo e delle bande del grafico
+  const AC_ACT_COLOR = { cooling: "#29b6f6", heating: "#ff8a3d", drying: "#26a69a", fan: "#90a4ae" };
+  const AC_ACT = { cooling: "Raffredda", heating: "Riscalda", drying: "Deumidifica", fan: "Ventila", idle: "Inattivo", off: "Spento" };
   const AC_ANIM = {
-    cool: "ac-spin 8s linear infinite", heat_cool: "ac-spin 8s linear infinite", fan_only: "ac-spin 1s linear infinite",
-    heat: "ac-flame .9s ease-in-out infinite", dry: "ac-drop 1.6s ease-in-out infinite",
+    cool: "ac-spin 8s linear infinite", heat_cool: "ac-spin 8s linear infinite", auto: "ac-spin 8s linear infinite",
+    fan_only: "ac-spin 1s linear infinite", heat: "ac-flame .9s ease-in-out infinite", dry: "ac-drop 1.6s ease-in-out infinite",
   };
   const AC_SWING = {
     Off: "Swing off", Top: "Alto", MiddleTop1: "Medio-alto 1", MiddleTop2: "Medio-alto 2",
     MiddleBottom2: "Medio-basso 2", MiddleBottom1: "Medio-basso 1", Bottom: "Basso", Swing: "Oscilla",
+    off: "Fermo", on: "Oscilla", vertical: "Verticale", horizontal: "Orizzontale", both: "Entrambi",
+  };
+  const AC_FAN = {
+    auto: "Auto", low: "Bassa", medium: "Media", middle: "Media", high: "Alta", quiet: "Silenziosa", silent: "Silenziosa",
+    turbo: "Turbo", strong: "Forte", focus: "Focus", diffuse: "Diffusa", on: "Accesa", off: "Spenta",
+  };
+  const AC_BLUE = "#4f78a8";
+
+  const AC_LABELS = {
+    entity: "Climatizzatore (climate)",
+    name: "Nome",
+    layout: "Aspetto",
+    temp_termometro: "Termometro della stanza",
+    fan: "Ventola",
+    door: "Porta o finestra",
+  };
+  const AC_HELPERS = {
+    name: "Vuoto: nome della stanza in Tado Heating Manager (se il climatizzatore è in una stanza) o del climate.",
+    layout: "Blocco: stessi comandi della riga (modalità, oscillazione, ventola, −/+), tre per riga.",
+    temp_termometro: "Vuoto: il termometro della stanza, altrimenti la temperatura del climatizzatore.",
+    fan: "Vuoto: la ventola configurata nella stanza (se c'è).",
+  };
+  const AC_LAYOUT_SELECTOR = {
+    select: { mode: "dropdown", options: [{ value: "row", label: "Riga" }, { value: "tile", label: "Blocco" }] },
   };
 
   const acEsc = (s) =>
     String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-
-  class HeatingAcCard extends HTMLElement {
-    constructor() {
-      super();
-      this.attachShadow({ mode: "open" });
-      this._sig = "";
-    }
-
-    setConfig(config) {
-      if (!config || !config.entity) throw new Error("Manca 'entity' (climate.*)");
-      this._config = config;
-      this._sig = "";
-      this._build();
-    }
-
-    getCardSize() {
-      return 1;
-    }
-
-    getGridOptions() {
-      return { columns: "full" };
-    }
-
-    static getStubConfig(hass) {
-      const e = Object.keys(hass.states).find((k) => k.startsWith("climate."));
-      return { entity: e || "climate.example" };
-    }
-
-    set hass(hass) {
-      this._hass = hass;
-      const s = hass.states[this._config.entity];
-      const sig = s ? s.state + JSON.stringify(s.attributes) : "-";
-      if (sig === this._sig) return;
-      this._sig = sig;
-      this._update();
-    }
-
-    _build() {
-      this.shadowRoot.innerHTML = `
-        <style>
-          :host { display: block; }
-          ha-card {
-            box-sizing: border-box; min-height: 68px; border-radius: 15px; padding: 10px 14px;
-            box-shadow: none; overflow: hidden; cursor: pointer; color: var(--primary-text-color);
-            display: grid; align-items: center; column-gap: 8px;
-            grid-template-columns: 44px minmax(0, 1fr) auto auto auto;
-            border: 2px solid transparent;
-          }
-          .icon {
-            width: 44px; height: 44px; border-radius: 50%; background: rgba(128,128,128,.22);
-            display: flex; align-items: center; justify-content: center;
-          }
-          .info { min-width: 0; overflow: hidden; text-align: left; }
-          .name { font-weight: 600; font-size: 15px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-          .line { margin-top: 3px; font-size: 11px; line-height: 1.3; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-          .btn {
-            position: relative; width: 38px; height: 38px; border-radius: 50%; background: rgba(128,128,128,.22);
-            display: flex; align-items: center; justify-content: center; justify-self: end; --mdc-icon-size: 20px;
-          }
-          .btn ha-icon { display: inline-block; pointer-events: none; }
-          .btn select {
-            position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
-            font-size: 16px; border: none;
-          }
-          .temp {
-            height: 38px; border-radius: 14px; background: rgba(128,128,128,.22); justify-self: end;
-            display: grid; grid-template-columns: 32px 44px 32px; align-items: center; padding: 0 4px;
-          }
-          .temp .v { font-size: 14px; font-weight: 500; text-align: center; }
-          .temp .s {
-            width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
-            cursor: pointer; --mdc-icon-size: 18px; border-radius: 50%; color: #4f78a8;
-          }
+  const acRgba = (hex, a) => {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
+  };
+  const acNum = (v) => v !== undefined && v !== null && v !== "" && !isNaN(Number(v));
+  const acFmt = (v) => (acNum(v) ? Number(v).toFixed(1) : "--");
+  const AC_SVG =
+    '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="10" rx="3"/><path d="M6.5 7.4v9.2"/><path d="M8.5 14.3h11"/><circle cx="18.6" cy="10.2" r=".5" fill="currentColor" stroke="none"/></svg>';
+  const AC_KEYFRAMES = `
           @keyframes ac-spin { to { transform: rotate(360deg); } }
           @keyframes ac-flame {
             0%   { transform: scale(1, 1) rotate(0deg);       filter: brightness(1); }
@@ -1937,12 +1911,209 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           }
           @keyframes ac-drop { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-2px) scale(1.1); } }
           @keyframes ac-sway { from { transform: rotate(-18deg); } to { transform: rotate(18deg); } }
+          @keyframes ventola-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+          @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }`;
+
+  class HeatingAcCard extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+      this._sig = "";
+    }
+
+    setConfig(config) {
+      if (!config || !config.entity) throw new Error("Manca 'entity' (climate.*)");
+      this._config = config;
+      this._cfg = this._effective();
+      this._sig = "";
+      this._build();
+    }
+
+    // Stanza di Tado Heating Manager con questo climate (attributo rooms di sensor.hp_all_rooms).
+    _room() {
+      const st = this._hass && this._hass.states["sensor.hp_all_rooms"];
+      const rooms = (st && st.attributes.rooms) || [];
+      return rooms.find((r) => r.climate === this._config.entity);
+    }
+
+    // Configurazione effettiva: i campi lasciati vuoti si prendono dalla stanza dell'integrazione.
+    _effective() {
+      const room = (this._hass && this._room()) || {};
+      const auto = { name: room.name, temp_termometro: room.thermometer, fan: room.fan };
+      const out = { ...this._config };
+      Object.keys(auto).forEach((k) => {
+        if (!out[k] && auto[k]) out[k] = auto[k];
+      });
+      return out;
+    }
+
+    _isTile() {
+      return !!this._config && this._config.layout === "tile";
+    }
+
+    getCardSize() {
+      return this._isTile() ? 2 : 1;
+    }
+
+    getGridOptions() {
+      return this._isTile() ? { columns: 4, min_columns: 4 } : { columns: "full" };
+    }
+
+    static getStubConfig(hass) {
+      const e = Object.keys(hass.states).find((k) => k.startsWith("climate."));
+      return { entity: e || "climate.example" };
+    }
+
+    // Editor visuale di HA (nessun elemento personalizzato: lo disegna HA dallo schema).
+    static getConfigForm() {
+      return {
+        schema: [
+          { name: "entity", required: true, selector: { entity: { domain: "climate" } } },
+          { name: "name", selector: { text: {} } },
+          { name: "layout", selector: AC_LAYOUT_SELECTOR },
+          {
+            type: "expandable", name: "", title: "Altre entità (facoltative)", flatten: true,
+            schema: [
+              { name: "temp_termometro", selector: { entity: { domain: "sensor", device_class: "temperature" } } },
+              { name: "fan", selector: { entity: { domain: ["fan", "switch"] } } },
+              { name: "door", selector: { entity: { domain: ["binary_sensor", "input_boolean", "switch"] } } },
+            ],
+          },
+        ],
+        computeLabel: (s) => AC_LABELS[s.name] || s.name,
+        computeHelper: (s) => AC_HELPERS[s.name],
+      };
+    }
+
+    set hass(hass) {
+      this._hass = hass;
+      const eff = this._effective();
+      if (JSON.stringify(eff) !== JSON.stringify(this._cfg)) {
+        this._cfg = eff;
+        this._sig = "";
+      }
+      const sig = this._signature();
+      if (sig === this._sig) return;
+      this._sig = sig;
+      this._update();
+    }
+
+    _st(id) {
+      return id && this._hass ? this._hass.states[id] : undefined;
+    }
+
+    _bad(s) {
+      return !s || s.state === "unavailable" || s.state === "unknown";
+    }
+
+    _signature() {
+      const c = this._cfg;
+      return [c.entity, c.temp_termometro, c.fan, c.door]
+        .map((id) => {
+          const s = this._st(id);
+          return s ? s.state + JSON.stringify(id === c.entity ? s.attributes : "") : "-";
+        })
+        .join("|");
+    }
+
+    _more(entityId) {
+      this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId }, bubbles: true, composed: true }));
+    }
+
+    // attivita' in corso: hvac_action se c'e', altrimenti dedotta dalla modalita'
+    _actOf(st, a) {
+      if (!st || st === "off" || st === "unavailable" || st === "unknown") return null;
+      const h = a && a.hvac_action;
+      if (h !== undefined && h !== null) return AC_ACT_COLOR[h] ? h : null;
+      return { cool: "cooling", heat: "heating", dry: "drying", fan_only: "fan" }[st] || "on";
+    }
+
+    _active(c) {
+      return c ? this._actOf(c.state, c.attributes) : null;
+    }
+
+    // temperatura della stanza: termometro se valido, altrimenti quella del climatizzatore
+    _roomTemp(c) {
+      const ts = this._st(this._cfg.temp_termometro);
+      if (!this._bad(ts) && acNum(ts.state)) return Number(ts.state);
+      return c ? c.attributes.current_temperature : undefined;
+    }
+
+    _stepOf(c) {
+      const s = Number(c && c.attributes.target_temp_step);
+      return s > 0 ? s : 1;
+    }
+
+    // temperatura target; da spento si mostra attenuata (se il climate la conserva) o "Spento"
+    _targetText(c) {
+      if (this._bad(c)) return { t: "--", dim: false };
+      const t = c.attributes.temperature;
+      const v = acNum(t) ? `${Number(t).toFixed(this._stepOf(c) < 1 ? 1 : 0)}°` : null;
+      if (c.state === "off") return { t: v || "Spento", dim: true };
+      return { t: v || "--", dim: false };
+    }
+
+    _orderedModes(c) {
+      const modes = (c && c.attributes.hvac_modes) || [];
+      return AC_ORDER.filter((m) => modes.includes(m)).concat(modes.filter((m) => !AC_ORDER.includes(m)));
+    }
+
+    // ---- riga ----
+    _build() {
+      this._closeMenu();
+      this._closeDialog();
+      if (this._isTile()) return this._buildTile();
+      this.shadowRoot.innerHTML = `
+        <style>
+          :host { display: block; }
+          ha-card {
+            box-sizing: border-box; min-height: 68px; border-radius: 15px; padding: 10px 14px;
+            box-shadow: none; overflow: hidden; cursor: pointer; color: var(--primary-text-color);
+            display: grid; align-items: center; column-gap: 8px;
+            grid-template-columns: 44px minmax(0, 1fr) auto auto;
+            border: 2px solid transparent;
+          }
+          .icon {
+            width: 44px; height: 44px; border-radius: 50%; background: rgba(128,128,128,.22);
+            display: flex; align-items: center; justify-content: center;
+          }
+          .info { min-width: 0; overflow: hidden; text-align: left; }
+          .nrow { display: flex; align-items: center; gap: 6px; min-width: 0; }
+          .name { font-weight: 600; font-size: 15px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+          .rfan { flex: none; cursor: pointer; display: inline-flex; --mdc-icon-size: 16px; color: var(--secondary-text-color); }
+          .rfan ha-icon { display: inline-flex; transform-origin: 50% 50%; }
+          .rfan.on { color: #29b6f6; }
+          .rfan.on ha-icon { animation: ventola-spin 1.2s linear infinite; }
+          .rfan.bad { color: var(--disabled-text-color, #9e9e9e); }
+          .line { margin-top: 3px; font-size: 11px; line-height: 1.2; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .line:empty { display: none; }
+          .btn {
+            width: 38px; height: 38px; border-radius: 50%; background: rgba(128,128,128,.22);
+            display: flex; align-items: center; justify-content: center; cursor: pointer; justify-self: end;
+            --mdc-icon-size: 20px;
+          }
+          .btn ha-icon { display: inline-block; transform-origin: 50% 50%; }
+          .temp {
+            height: 38px; border-radius: 14px; background: rgba(128,128,128,.22); justify-self: end;
+            display: grid; grid-template-columns: 32px 44px 32px; align-items: center; padding: 0 4px;
+          }
+          .temp .v { font-size: 14px; font-weight: 500; text-align: center; }
+          .temp .v.txt { font-size: 11.5px; font-weight: 400; color: var(--secondary-text-color); }
+          .temp .v.dim { color: var(--secondary-text-color); }
+          .temp .s {
+            width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; --mdc-icon-size: 18px; border-radius: 50%;
+          }
+          ${AC_KEYFRAMES}
         </style>
         <ha-card>
-          <div class="icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="10" rx="3"/><path d="M6.5 7.4v9.2"/><path d="M8.5 14.3h11"/><circle cx="18.6" cy="10.2" r=".5" fill="currentColor" stroke="none"/></svg></div>
-          <div class="info"><div class="name"></div><div class="line"></div></div>
-          <div class="btn mode"><ha-icon></ha-icon><select></select></div>
-          <div class="btn swing"><ha-icon></ha-icon><select></select></div>
+          <div class="icon">${AC_SVG}</div>
+          <div class="info">
+            <div class="nrow"><div class="name"></div><span class="rfan" data-a="fan"><ha-icon icon="mdi:fan"></ha-icon></span></div>
+            <div class="line"></div>
+          </div>
+          <div class="btn mode" data-a="mode"><ha-icon></ha-icon></div>
+          <div class="btn swing" data-a="swing"><ha-icon></ha-icon></div>
           <div class="temp">
             <div class="s" data-a="minus"><ha-icon icon="mdi:minus"></ha-icon></div>
             <div class="v"></div>
@@ -1957,99 +2128,681 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         line: $(".line"),
         mode: $(".btn.mode"),
         modeIcon: $(".btn.mode ha-icon"),
-        modeSel: $(".btn.mode select"),
         swing: $(".btn.swing"),
         swingIcon: $(".btn.swing ha-icon"),
-        swingSel: $(".btn.swing select"),
+        fan: $(".rfan"),
+        fanIcon: $(".rfan ha-icon"),
         value: $(".temp .v"),
       };
-
-      this._card.addEventListener("click", () =>
-        this.dispatchEvent(
-          new CustomEvent("hass-more-info", { detail: { entityId: this._config.entity }, bubbles: true, composed: true })
-        )
-      );
-      // i controlli non devono aprire i dettagli
-      this.shadowRoot.querySelectorAll(".btn, .temp .s").forEach((el) =>
-        el.addEventListener("click", (ev) => ev.stopPropagation())
-      );
-      this._el.modeSel.addEventListener("change", (ev) =>
-        this._hass.callService("climate", "set_hvac_mode", { entity_id: this._config.entity, hvac_mode: ev.target.value })
-      );
-      this._el.swingSel.addEventListener("change", (ev) =>
-        this._hass.callService("climate", "set_swing_mode", { entity_id: this._config.entity, swing_mode: ev.target.value })
-      );
-      this.shadowRoot.querySelectorAll(".temp .s").forEach((el) =>
-        el.addEventListener("click", () => this._step(el.dataset.a === "plus" ? 1 : -1))
-      );
+      this._card.addEventListener("click", () => this._openDialog());
+      this._bindButtons();
     }
 
-    _step(dir) {
-      const c = this._hass.states[this._config.entity];
+    // ---- blocco (layout: tile): stile delle tessere di heating-summary-card, comandi della riga ----
+    _buildTile() {
+      this.shadowRoot.innerHTML = `
+        <style>
+          :host { display: block; height: 100%; }
+          ha-card {
+            box-sizing: border-box; height: 100%; padding: 10px 12px 12px; border-radius: var(--ha-card-border-radius, 14px);
+            box-shadow: none; overflow: hidden; cursor: pointer; color: var(--primary-text-color);
+            border: 2px solid transparent; transition: border-color .4s ease, background .4s ease;
+            display: flex; flex-direction: column; gap: 6px; container-type: inline-size;
+          }
+          ha-card.off .mid, ha-card.off .rst { opacity: .72; }
+          .top { display: flex; align-items: center; gap: 4px; min-height: 32px; }
+          .rname { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .btn {
+            width: 32px; height: 32px; border-radius: 50%; background: rgba(128,128,128,.18); flex: none;
+            display: flex; align-items: center; justify-content: center; cursor: pointer; --mdc-icon-size: 18px;
+          }
+          .btn ha-icon { display: inline-flex; transform-origin: 50% 50%; }
+          .mid { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+          .sub { display: flex; align-items: center; gap: 6px; min-height: 18px; margin-top: -4px; }
+          .rfan {
+            margin-left: auto; flex: none; cursor: pointer; display: inline-flex;
+            --mdc-icon-size: 16px; color: var(--secondary-text-color);
+          }
+          .rfan ha-icon { display: inline-flex; transform-origin: 50% 50%; }
+          .rfan.on { color: #29b6f6; }
+          .rfan.on ha-icon { animation: ventola-spin 1.2s linear infinite; }
+          .rfan.bad { color: var(--disabled-text-color, #9e9e9e); }
+          .rtemp { font-size: 26px; font-weight: 400; line-height: 1.1; white-space: nowrap; }
+          .rh { font-size: 12px; color: #26a69a; font-weight: 500; white-space: nowrap; }
+          .rh:empty, .rst:empty { display: none; }
+          .rst { font-size: 12px; color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+          .temp {
+            height: 36px; border-radius: 14px; background: rgba(128,128,128,.18); margin-top: auto;
+            display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px; align-items: center;
+          }
+          .temp .v { font-size: 15px; font-weight: 500; text-align: center; white-space: nowrap; }
+          .temp .v.txt { font-size: 13px; font-weight: 400; color: var(--secondary-text-color); }
+          .temp .v.dim { color: var(--secondary-text-color); }
+          .temp .s {
+            width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; --mdc-icon-size: 18px; border-radius: 50%;
+          }
+          .btn:hover, .temp .s:hover { background: rgba(128,128,128,.3); }
+          @container (max-width: 135px) {
+            .rname { font-size: 13px; }
+            .btn { width: 28px; height: 28px; --mdc-icon-size: 16px; }
+            .rtemp { font-size: 21px; }
+            .rh, .rst { font-size: 10.5px; }
+            .mid { flex-wrap: wrap; row-gap: 0; gap: 4px; }
+            .rfan { --mdc-icon-size: 14px; }
+            .temp { grid-template-columns: 30px minmax(0, 1fr) 30px; }
+            .temp .s { width: 30px; }
+          }
+          ${AC_KEYFRAMES}
+        </style>
+        <ha-card tabindex="0" role="button">
+          <div class="top">
+            <div class="rname"></div>
+            <div class="btn swing" data-a="swing"><ha-icon></ha-icon></div>
+            <div class="btn mode" data-a="mode"><ha-icon></ha-icon></div>
+          </div>
+          <div class="mid">
+            <span class="rtemp"></span><span class="rh" title="Umidità"></span>
+          </div>
+          <div class="sub">
+            <span class="rst"></span>
+            <span class="rfan" data-a="fan"><ha-icon icon="mdi:fan"></ha-icon></span>
+          </div>
+          <div class="temp">
+            <div class="s" data-a="minus"><ha-icon icon="mdi:minus"></ha-icon></div>
+            <div class="v"></div>
+            <div class="s" data-a="plus"><ha-icon icon="mdi:plus"></ha-icon></div>
+          </div>
+        </ha-card>`;
+      const $ = (q) => this.shadowRoot.querySelector(q);
+      this._card = $("ha-card");
+      this._el = {
+        tile: true,
+        name: $(".rname"),
+        mode: $(".btn.mode"),
+        modeIcon: $(".btn.mode ha-icon"),
+        swing: $(".btn.swing"),
+        swingIcon: $(".btn.swing ha-icon"),
+        fan: $(".rfan"),
+        fanIcon: $(".rfan ha-icon"),
+        temp: $(".rtemp"),
+        hum: $(".rh"),
+        state: $(".rst"),
+        value: $(".temp .v"),
+      };
+      this._card.addEventListener("click", () => this._openDialog());
+      this._card.addEventListener("keydown", (ev) => {
+        if (ev.target === this._card && (ev.key === "Enter" || ev.key === " ")) {
+          ev.preventDefault();
+          this._openDialog();
+        }
+      });
+      this._bindButtons();
+    }
+
+    // pulsanti [data-a]: tocco = azione, pressione lunga = dettagli
+    _bindButtons() {
+      this.shadowRoot.querySelectorAll("[data-a]").forEach((el) => {
+        el.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          this._action(el.dataset.a, el);
+        });
+        let t;
+        el.addEventListener("pointerdown", () => {
+          t = setTimeout(() => {
+            t = null;
+            el._held = true;
+            const id = el.dataset.a === "fan" ? this._cfg.fan : this._cfg.entity;
+            this._more(id);
+          }, 500);
+        });
+        const clear = () => t && clearTimeout(t);
+        el.addEventListener("pointerup", clear);
+        el.addEventListener("pointerleave", clear);
+        el.addEventListener("click", (ev) => {
+          if (el._held) {
+            el._held = false;
+            ev.stopImmediatePropagation();
+          }
+        }, true);
+      });
+    }
+
+    _action(a, anchor) {
+      const c = this._st(this._cfg.entity);
       if (!c) return;
+      const id = this._cfg.entity;
+      if (a === "mode") {
+        const items = this._orderedModes(c).map((m) => ({
+          v: m, label: AC_LABEL[m] || m, icon: AC_ICON[m] || "mdi:thermostat", color: AC_COLOR[m],
+        }));
+        this._openMenu(anchor || this._el.mode, items, c.state, (m) =>
+          this._hass.callService("climate", "set_hvac_mode", { entity_id: id, hvac_mode: m })
+        );
+      } else if (a === "swing") {
+        const items = (c.attributes.swing_modes || []).map((s) => ({
+          v: s, label: AC_SWING[s] || s,
+          icon: s === "Off" || s === "off" ? "mdi:arrow-oscillating-off" : "mdi:arrow-oscillating",
+        }));
+        this._openMenu(anchor || this._el.swing, items, c.attributes.swing_mode, (s) =>
+          this._hass.callService("climate", "set_swing_mode", { entity_id: id, swing_mode: s })
+        );
+      } else if (a === "fan") {
+        if (this._cfg.fan) this._hass.callService("homeassistant", "toggle", { entity_id: this._cfg.fan });
+      } else if (a === "minus" || a === "plus") {
+        this._stepTemp(a === "plus" ? 1 : -1);
+      }
+    }
+
+    // -/+ della temperatura target (passo e limiti del climate); da spento cambia solo il target
+    _stepTemp(dir) {
+      const c = this._st(this._cfg.entity);
+      if (this._bad(c)) return;
       const a = c.attributes;
-      const step = Number(a.target_temp_step ?? 1);
-      const base = Number(a.temperature ?? a.current_temperature ?? 22);
-      const t = Math.min(Number(a.max_temp ?? 30), Math.max(Number(a.min_temp ?? 16), base + dir * step));
-      this._hass.callService("climate", "set_temperature", { entity_id: this._config.entity, temperature: t });
+      const step = this._stepOf(c);
+      const room = this._roomTemp(c);
+      const base = acNum(a.temperature) ? Number(a.temperature) : acNum(room) ? Number(room) : 22;
+      const lo = acNum(a.min_temp) ? Number(a.min_temp) : 16;
+      const hi = acNum(a.max_temp) ? Number(a.max_temp) : 30;
+      const t = Math.min(hi, Math.max(lo, Math.round((base + dir * step) / step) * step));
+      this._hass.callService("climate", "set_temperature", { entity_id: this._cfg.entity, temperature: Number(t.toFixed(2)) });
+    }
+
+    // tendina di scelta (modalita' / oscillazione): una sola chiamata al servizio
+    _closeMenu() {
+      if (this._menu) {
+        this._menu.remove();
+        this._menu = null;
+      }
+      if (this._menuOff) {
+        this._menuOff();
+        this._menuOff = null;
+      }
+      this._menuAnchor = null;
+    }
+
+    _openMenu(anchor, items, cur, pick) {
+      if (this._menu) {
+        const same = this._menuAnchor === anchor;
+        this._closeMenu();
+        if (same) return;
+      }
+      if (!items.length || !anchor) return;
+      const r = anchor.getBoundingClientRect();
+      const m = document.createElement("div");
+      m.style.cssText =
+        "position:fixed;z-index:9999;min-width:150px;max-height:70vh;overflow-y:auto;padding:6px;border-radius:14px;" +
+        "background:var(--card-background-color,#fff);color:var(--primary-text-color);" +
+        "box-shadow:0 6px 24px rgba(0,0,0,.35);font-family:var(--paper-font-body1_-_font-family,inherit);";
+      m.innerHTML = items
+        .map(
+          (it) =>
+            `<div data-m="${acEsc(it.v)}" style="display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;border-radius:10px;cursor:pointer;font-size:14px;` +
+            `${cur === it.v ? "background:rgba(128,128,128,.25);font-weight:600;" : ""}">` +
+            `<ha-icon icon="${acEsc(it.icon || "mdi:circle-small")}" style="--mdc-icon-size:20px;color:${it.color || "var(--primary-text-color)"}"></ha-icon>${acEsc(it.label)}</div>`
+        )
+        .join("");
+      document.body.appendChild(m);
+      const w = m.offsetWidth;
+      const h = m.offsetHeight;
+      const left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
+      let top = r.bottom + 6;
+      if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+      m.style.left = left + "px";
+      m.style.top = top + "px";
+      m.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const t = ev.target.closest("[data-m]");
+        if (!t) return;
+        const v = t.dataset.m;
+        this._closeMenu();
+        if (v !== cur) pick(v);
+      });
+      const away = (ev) => {
+        if (!ev.composedPath().includes(m) && !ev.composedPath().includes(anchor)) this._closeMenu();
+      };
+      const key = (ev) => ev.key === "Escape" && this._closeMenu();
+      const close = () => this._closeMenu();
+      // listener registrati dopo il click corrente, per non chiudere subito la tendina
+      setTimeout(() => {
+        if (this._menu !== m) return;
+        document.addEventListener("pointerdown", away, true);
+        document.addEventListener("keydown", key);
+        window.addEventListener("scroll", close, true);
+        window.addEventListener("resize", close);
+        this._menuOff = () => {
+          document.removeEventListener("pointerdown", away, true);
+          document.removeEventListener("keydown", key);
+          window.removeEventListener("scroll", close, true);
+          window.removeEventListener("resize", close);
+        };
+      }, 0);
+      this._menu = m;
+      this._menuAnchor = anchor;
     }
 
     _update() {
       if (!this._el || !this._hass) return;
-      const cfg = this._config;
-      const c = this._hass.states[cfg.entity];
+      const cfg = this._cfg;
+      const c = this._st(cfg.entity);
       const e = this._el;
-      const bad = !c || c.state === "unavailable" || c.state === "unknown";
+      const bad = this._bad(c);
+      const isOff = !bad && c.state === "off";
+      const act = this._active(c);
+      const mc = (!bad && AC_COLOR[c.state]) || "";
+      const ac = act ? AC_ACT_COLOR[act] || mc : "";
+      const tint = e.tile ? 0.18 : 0.24;
 
-      this._card.style.backgroundImage = c && AC_TINT[c.state] ? `linear-gradient(${AC_TINT[c.state]}, ${AC_TINT[c.state]})` : "";
-      this._card.style.borderColor = (c && AC_COLOR[c.state]) || "transparent";
-      e.iconWrap.style.color = (c && AC_COLOR[c.state]) || "var(--primary-text-color)";
+      // bordo: colore pieno quando lavora (con sfondo colorato), attenuato quando la modalita' e' attiva ma e' fermo
+      this._card.classList.toggle("off", bad || isOff);
+      this._card.style.borderColor = ac || (mc ? acRgba(mc, 0.45) : "transparent");
+      this._card.style.backgroundImage = ac ? `linear-gradient(${acRgba(ac, tint)}, ${acRgba(ac, tint)})` : "";
+      if (e.iconWrap) e.iconWrap.style.color = mc || "var(--primary-text-color)";
+      this.shadowRoot.querySelectorAll(".temp .s").forEach((x) => (x.style.color = mc || AC_BLUE));
 
-      const name = cfg.name || (c && c.attributes.friendly_name) || "";
-      let line;
-      if (!c) line = "Entità non trovata";
-      else if (c.state === "unavailable") line = "Non disponibile";
-      else if (c.state === "unknown") line = "Stato sconosciuto";
-      else {
-        const t = c.attributes.current_temperature;
-        const tt = t === undefined || t === null || isNaN(Number(t)) ? "--" : Number(t).toFixed(1);
-        line = `${tt}°C • ${AC_LABEL[c.state] || c.state}`;
-      }
-      e.name.textContent = name;
-      e.line.textContent = line;
-
-      // pulsante modalità
+      // modalita'
       e.mode.style.display = bad ? "none" : "";
       if (!bad) {
         e.modeIcon.setAttribute("icon", AC_ICON[c.state] || "mdi:thermostat");
-        e.modeIcon.style.color = AC_COLOR[c.state] || "var(--primary-text-color)";
+        e.modeIcon.style.color = mc || "var(--primary-text-color)";
         e.modeIcon.style.transformOrigin = c.state === "heat" ? "50% 90%" : "50% 50%";
-        e.modeIcon.style.animation = AC_ANIM[c.state] || "none";
-        e.modeSel.innerHTML = (c.attributes.hvac_modes || [])
-          .map((m) => `<option value="${acEsc(m)}"${m === c.state ? " selected" : ""}>${acEsc(AC_LABEL[m] || m)}</option>`)
-          .join("");
+        e.modeIcon.style.animation = act ? AC_ANIM[c.state] || "none" : "none";
+        e.mode.title = AC_LABEL[c.state] || c.state;
       }
 
-      // pulsante oscillazione
-      const list = c && c.attributes.swing_modes;
-      const showSwing = !bad && list && list.length;
+      // oscillazione
+      const list = !bad && c.attributes.swing_modes;
+      const showSwing = !!(list && list.length);
       e.swing.style.display = showSwing ? "" : "none";
       if (showSwing) {
         const cur = c.attributes.swing_mode;
-        const isOff = cur === undefined || cur === null || cur === "Off";
-        const running = c.state !== "off" && cur === "Swing";
-        e.swingIcon.setAttribute("icon", isOff ? "mdi:arrow-oscillating-off" : "mdi:arrow-oscillating");
-        e.swingIcon.style.color = isOff ? "var(--secondary-text-color)" : "var(--primary-text-color)";
+        const sOff = cur === undefined || cur === null || cur === "Off" || cur === "off";
+        const running = !isOff && (cur === "Swing" || cur === "on" || cur === "both" || cur === "vertical" || cur === "horizontal");
+        e.swingIcon.setAttribute("icon", sOff ? "mdi:arrow-oscillating-off" : "mdi:arrow-oscillating");
+        e.swingIcon.style.color = sOff ? "var(--secondary-text-color)" : "var(--primary-text-color)";
         e.swingIcon.style.animation = running ? "ac-sway 1.6s ease-in-out infinite alternate" : "none";
-        e.swingSel.innerHTML = list
-          .map((s) => `<option value="${acEsc(s)}"${s === cur ? " selected" : ""}>${acEsc(AC_SWING[s] || s)}</option>`)
-          .join("");
+        e.swing.title = AC_SWING[cur] || cur || "";
       }
-      this._card.style.gridTemplateColumns =
-        "44px minmax(0, 1fr)" + (bad ? "" : " auto") + (showSwing ? " auto" : "") + " auto";
 
-      const t = c && c.attributes.temperature;
-      e.value.textContent = bad || t === undefined || t === null || isNaN(Number(t)) ? "--" : Number(t).toFixed(0) + "°";
+      // ventola separata
+      if (cfg.fan) {
+        const f = this._st(cfg.fan);
+        const fb = this._bad(f);
+        const on = !fb && f.state === "on";
+        e.fan.style.display = "";
+        e.fanIcon.setAttribute("icon", fb ? "mdi:fan-off" : "mdi:fan");
+        e.fan.classList.toggle("on", on);
+        e.fan.classList.toggle("bad", fb);
+        e.fan.title = fb ? "Ventola non disponibile" : on ? "Ventola accesa" : "Ventola spenta";
+      } else {
+        e.fan.style.display = "none";
+      }
+      if (!e.tile) {
+        this._card.style.gridTemplateColumns =
+          "44px minmax(0, 1fr)" + (bad ? "" : " auto") + (showSwing ? " auto" : "") + " auto";
+      }
+
+      // testi
+      const temp = this._roomTemp(c);
+      const hum = c && c.attributes.current_humidity;
+      const humTxt = !bad && acNum(hum) ? `${Math.round(Number(hum))}%` : "";
+      e.name.textContent = cfg.name || (c && c.attributes.friendly_name) || cfg.entity;
+      if (e.tile) {
+        e.temp.textContent = !c || c.state === "unavailable" ? "n.d." : `${acFmt(temp)}°`;
+        e.hum.textContent = humTxt;
+        e.state.textContent = bad ? "" : (act && AC_ACT[act]) || AC_LABEL[c.state] || c.state;
+      } else {
+        let line;
+        if (!c) line = "Entità non trovata";
+        else if (c.state === "unavailable") line = "Non disponibile";
+        else if (c.state === "unknown") line = "Stato sconosciuto";
+        else {
+          line = `T: ${acFmt(temp)}°C`;
+          if (humTxt) line += ` • U: ${humTxt}`;
+          line += ` • ${AC_LABEL[c.state] || c.state}`;
+        }
+        e.line.textContent = line;
+      }
+
+      const tv = this._targetText(c);
+      e.value.textContent = tv.t;
+      e.value.classList.toggle("txt", tv.t === "Spento");
+      e.value.classList.toggle("dim", tv.dim);
+      this._dlgUpdate();
+    }
+
+    disconnectedCallback() {
+      this._closeMenu();
+      this._closeDialog();
+    }
+
+    // ---- popup (alternativa al more-info) ----
+    _openDialog() {
+      if (this._dlg || !this._hass) return;
+      const cfg = this._cfg;
+      const host = document.createElement("div");
+      const root = host.attachShadow({ mode: "open" });
+      root.innerHTML = `
+        <style>
+          .ov { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,.55);
+            display: flex; align-items: center; justify-content: center; padding: 12px; box-sizing: border-box; }
+          .dlg { background: var(--card-background-color, #1c1c1c); color: var(--primary-text-color);
+            border-radius: 20px; width: min(560px, 100%); max-height: 100%; overflow-y: auto;
+            padding: 16px; box-sizing: border-box; font-family: var(--paper-font-body1_-_font-family, inherit); }
+          .hd { display: flex; align-items: center; gap: 8px; }
+          .hd .t { flex: 1; font-size: 18px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .x { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+          .x:hover, .chip:hover, .mode:hover, .rng:hover { background: rgba(128,128,128,.32); }
+          .sub { font-size: 13px; opacity: .8; margin: 2px 0 12px; }
+          .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+          .row:empty { display: none; }
+          .lbl { font-size: 12px; opacity: .7; width: 100%; margin-bottom: -4px; }
+          .mode, .chip, .rng { height: 38px; padding: 0 14px; border-radius: 19px; background: rgba(128,128,128,.22);
+            display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; --mdc-icon-size: 20px; user-select: none; }
+          .mode.on, .rng.on { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+          .chip.ro { cursor: default; }
+          .chip.active { background: rgba(41,182,246,.28); color: #29b6f6; }
+          .chip.alert { background: rgba(255,138,61,.28); color: #ff8a3d; }
+          .tset { margin-left: auto; height: 44px; border-radius: 16px; background: rgba(128,128,128,.22);
+            display: grid; grid-template-columns: 44px 70px 44px; align-items: center; }
+          .tset .v { text-align: center; font-size: 20px; font-weight: 600; }
+          .tset .v.dim { color: var(--secondary-text-color); font-weight: 400; }
+          .tset .s { height: 44px; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 50%; }
+          .graph { min-height: 160px; margin: 4px 0 8px; }
+          .more { text-align: center; font-size: 12px; opacity: .7; cursor: pointer; padding: 6px; }
+          .more:hover { opacity: 1; }
+        </style>
+        <div class="ov"><div class="dlg">
+          <div class="hd"><div class="t"></div><div class="x" data-d="close"><ha-icon icon="mdi:close"></ha-icon></div></div>
+          <div class="sub"></div>
+          <div class="row modes"></div>
+          <div class="row fmodes"></div>
+          <div class="row smodes"></div>
+          <div class="row">
+            <div class="chips" style="display:contents"></div>
+            <div class="tset">
+              <div class="s" data-d="minus"><ha-icon icon="mdi:minus"></ha-icon></div>
+              <div class="v"></div>
+              <div class="s" data-d="plus"><ha-icon icon="mdi:plus"></ha-icon></div>
+            </div>
+          </div>
+          <div class="row ranges">
+            <div class="rng" data-h="6">6 ore</div><div class="rng on" data-h="24">24 ore</div><div class="rng" data-h="168">7 giorni</div>
+          </div>
+          <div class="graph"></div>
+          <div class="more" data-d="more">Impostazioni avanzate</div>
+        </div></div>`;
+      document.body.appendChild(host);
+      const q = (x) => root.querySelector(x);
+      this._dlg = { host, root, q, hours: 24 };
+
+      root.querySelector(".ov").addEventListener("click", (ev) => {
+        if (ev.target.classList.contains("ov")) this._closeDialog();
+      });
+      root.addEventListener("click", (ev) => {
+        const d = ev.target.closest("[data-d]");
+        const h = ev.target.closest("[data-h]");
+        const m = ev.target.closest("[data-m]");
+        const fm = ev.target.closest("[data-f]");
+        const sm = ev.target.closest("[data-s]");
+        const t = ev.target.closest("[data-t]");
+        const id = cfg.entity;
+        if (h) {
+          this._dlg.hours = Number(h.dataset.h);
+          root.querySelectorAll(".rng").forEach((x) => x.classList.toggle("on", x === h));
+          this._dlgGraph();
+        } else if (m) {
+          this._hass.callService("climate", "set_hvac_mode", { entity_id: id, hvac_mode: m.dataset.m });
+        } else if (fm) {
+          this._hass.callService("climate", "set_fan_mode", { entity_id: id, fan_mode: fm.dataset.f });
+        } else if (sm) {
+          this._hass.callService("climate", "set_swing_mode", { entity_id: id, swing_mode: sm.dataset.s });
+        } else if (t) {
+          this._hass.callService("homeassistant", "toggle", { entity_id: t.dataset.t });
+        } else if (d) {
+          if (d.dataset.d === "close") this._closeDialog();
+          else if (d.dataset.d === "more") this._more(id);
+          else this._action(d.dataset.d);
+        }
+      });
+      this._onKey = (ev) => ev.key === "Escape" && this._closeDialog();
+      document.addEventListener("keydown", this._onKey);
+
+      this._dlgUpdate();
+      this._dlgGraph();
+    }
+
+    _closeDialog() {
+      if (!this._dlg) return;
+      document.removeEventListener("keydown", this._onKey);
+      this._dlg.host.remove();
+      this._dlg = null;
+    }
+
+    async _dlgGraph() {
+      const dlg = this._dlg;
+      if (!dlg) return;
+      const cfg = this._cfg;
+      const box = dlg.q(".graph");
+      box.textContent = "Caricamento grafico...";
+      const seq = (dlg.seq = (dlg.seq || 0) + 1);
+      const end = Date.now();
+      const start = end - dlg.hours * 3600e3;
+      const ids = [cfg.entity];
+      if (cfg.temp_termometro) ids.push(cfg.temp_termometro);
+      let res;
+      try {
+        res = await this._hass.callWS({
+          type: "history/history_during_period",
+          start_time: new Date(start).toISOString(),
+          end_time: new Date(end).toISOString(),
+          entity_ids: ids,
+          include_start_time_state: true,
+          significant_changes_only: false,
+          no_attributes: false,
+        });
+      } catch (err) {
+        if (this._dlg === dlg && seq === dlg.seq) box.textContent = "Grafico non disponibile";
+        return;
+      }
+      if (this._dlg !== dlg || seq !== dlg.seq) return;
+
+      const ts = (p) => {
+        const v = p.lu ?? p.lc ?? p.last_updated ?? p.last_changed;
+        return typeof v === "string" ? Date.parse(v) : v * 1000;
+      };
+      const temp = [];
+      const target = [];
+      const bandsArr = []; // [t0, t1, attivita']
+      const seen = new Set();
+      let attrs = {};
+      let cur = null;
+      let curStart = null;
+      (res[cfg.entity] || []).forEach((p) => {
+        const t = Math.max(ts(p), start);
+        const st = p.s ?? p.state;
+        attrs = Object.assign({}, attrs, p.a ?? p.attributes ?? {});
+        if (acNum(attrs.current_temperature)) temp.push({ t, v: Number(attrs.current_temperature) });
+        const off = st === "off" || st === "unavailable" || st === "unknown";
+        target.push({ t, v: off || !acNum(attrs.temperature) ? null : Number(attrs.temperature) });
+        const act = this._actOf(st, attrs);
+        if (act !== cur) {
+          if (cur) bandsArr.push([curStart, t, cur]);
+          cur = act;
+          curStart = t;
+        }
+      });
+      if (cur) bandsArr.push([curStart, end, cur]);
+      if (cfg.temp_termometro) {
+        const sensor = [];
+        (res[cfg.temp_termometro] || []).forEach((p) => {
+          const raw = p.s ?? p.state;
+          if (acNum(raw)) sensor.push({ t: Math.max(ts(p), start), v: Number(raw) });
+        });
+        if (sensor.length) {
+          temp.length = 0;
+          temp.push(...sensor);
+        }
+      }
+      [temp, target].forEach((a) => {
+        if (a.length) a.push({ t: end, v: a[a.length - 1].v });
+      });
+
+      const vals = temp.concat(target).map((x) => x.v).filter((v) => v !== null);
+      if (temp.length < 1 || !vals.length) {
+        box.textContent = "Nessun dato nel periodo";
+        return;
+      }
+      let lo = Math.floor(Math.min(...vals) - 0.5);
+      let hi = Math.ceil(Math.max(...vals) + 0.5);
+      if (hi - lo < 4) hi = lo + 4;
+      const W = 600, H = 220, L = 36, R = 10, T = 10, B = 24;
+      const X = (t) => L + ((t - start) / (end - start)) * (W - L - R);
+      const Y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+      const line = (arr, step) => {
+        let d = "";
+        let pen = false;
+        arr.forEach((p) => {
+          if (p.v === null) {
+            pen = false;
+            return;
+          }
+          if (!pen) d += `M${X(p.t).toFixed(1)} ${Y(p.v).toFixed(1)}`;
+          else if (step) d += `H${X(p.t).toFixed(1)}V${Y(p.v).toFixed(1)}`;
+          else d += `L${X(p.t).toFixed(1)} ${Y(p.v).toFixed(1)}`;
+          pen = true;
+        });
+        return d;
+      };
+      let grid = "";
+      const stepY = hi - lo > 12 ? 5 : hi - lo > 6 ? 2 : 1;
+      for (let v = Math.ceil(lo / stepY) * stepY; v <= hi; v += stepY)
+        grid += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="currentColor" opacity=".15"/><text x="${L - 5}" y="${Y(v) + 4}" text-anchor="end" font-size="11" fill="currentColor" opacity=".7">${v}</text>`;
+      const fmtT = (t) => {
+        const d = new Date(t);
+        return dlg.hours > 24
+          ? d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })
+          : d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+      };
+      let xl = "";
+      for (let i = 0; i <= 4; i++) {
+        const t = start + ((end - start) * i) / 4;
+        xl += `<text x="${X(t)}" y="${H - 6}" text-anchor="${i === 0 ? "start" : i === 4 ? "end" : "middle"}" font-size="11" fill="currentColor" opacity=".7">${fmtT(t)}</text>`;
+      }
+      const bandColor = (a) => AC_ACT_COLOR[a] || "#4caf50";
+      const bands = bandsArr
+        .map(([a, b, act]) => {
+          seen.add(act);
+          return `<rect x="${X(a)}" y="${T}" width="${Math.max(1, X(b) - X(a))}" height="${H - T - B}" fill="${bandColor(act)}" opacity=".18"/>`;
+        })
+        .join("");
+      const legendBands = [...seen]
+        .map((a) => `<span><b style="color:${bandColor(a)};opacity:.5">&#9608;</b> ${AC_ACT[a] || "Acceso"}</span>`)
+        .join("");
+      box.innerHTML = `
+        <div style="position:relative">
+          <svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block;touch-action:none">
+            ${grid}${xl}${bands}
+            <path d="${line(target, true)}" fill="none" stroke="currentColor" stroke-opacity=".6" stroke-width="1.8" stroke-dasharray="5 3"/>
+            <path d="${line(temp, false)}" fill="none" stroke="#29b6f6" stroke-width="2.2" stroke-linejoin="round"/>
+            <line class="cur" y1="${T}" y2="${H - B}" stroke="currentColor" opacity=".5" style="display:none"/>
+          </svg>
+          <div class="tip" style="position:absolute;top:0;left:40px;font-size:12px;padding:2px 8px;border-radius:8px;background:rgba(128,128,128,.3);display:none"></div>
+        </div>
+        <div style="display:flex;gap:14px;font-size:12px;opacity:.85;padding:2px 10px 0;flex-wrap:wrap">
+          <span><b style="color:#29b6f6">&#9644;</b> ${cfg.temp_termometro ? "Termometro" : "Temperatura"}</span>
+          <span><b style="opacity:.6">&#9548;</b> Target</span>
+          ${legendBands}
+        </div>`;
+      const svg = box.querySelector("svg");
+      const curLine = box.querySelector(".cur");
+      const tip = box.querySelector(".tip");
+      const at = (arr, t) => {
+        let r = null;
+        for (const p of arr) {
+          if (p.t <= t) r = p;
+          else break;
+        }
+        return r;
+      };
+      const move = (ev) => {
+        const r = svg.getBoundingClientRect();
+        const x = ((ev.clientX - r.left) / r.width) * W;
+        if (x < L || x > W - R) return;
+        const t = start + ((x - L) / (W - L - R)) * (end - start);
+        const a = at(temp, t);
+        const g = at(target, t);
+        curLine.setAttribute("x1", x);
+        curLine.setAttribute("x2", x);
+        curLine.style.display = "";
+        tip.textContent =
+          `${fmtT(t)}  •  T: ${a ? a.v.toFixed(1) : "--"}°` + (g && g.v !== null ? `  •  Target: ${g.v.toFixed(1)}°` : "");
+        tip.style.display = "";
+      };
+      svg.addEventListener("pointermove", move);
+      svg.addEventListener("pointerdown", move);
+      svg.addEventListener("pointerleave", () => {
+        curLine.style.display = "none";
+        tip.style.display = "none";
+      });
+    }
+
+    _dlgUpdate() {
+      const dlg = this._dlg;
+      if (!dlg || !this._hass) return;
+      const cfg = this._cfg;
+      const c = this._st(cfg.entity);
+      const q = dlg.q;
+      q(".t").textContent = cfg.name || (c && c.attributes.friendly_name) || "";
+
+      const temp = this._roomTemp(c);
+      const hum = c && c.attributes.current_humidity;
+      const a = c && (c.attributes.hvac_action || (c.state === "off" ? "off" : ""));
+      const st = c ? (a && AC_ACT[a]) || AC_LABEL[c.state] || c.state : "";
+      q(".sub").textContent = c
+        ? `${st || "--"} • T: ${acFmt(temp)}°C` + (acNum(hum) ? ` • U: ${Math.round(Number(hum))}%` : "")
+        : "Entità non trovata";
+
+      q(".modes").innerHTML = this._orderedModes(c)
+        .map(
+          (m) =>
+            `<div class="mode${c && c.state === m ? " on" : ""}" data-m="${acEsc(m)}"><ha-icon icon="${AC_ICON[m] || "mdi:thermostat"}"></ha-icon>${acEsc(AC_LABEL[m] || m)}</div>`
+        )
+        .join("");
+
+      const fms = (c && c.attributes.fan_modes) || [];
+      q(".fmodes").innerHTML = fms.length
+        ? `<div class="lbl">Velocità</div>` +
+          fms
+            .map((f) => `<div class="mode${c.attributes.fan_mode === f ? " on" : ""}" data-f="${acEsc(f)}">${acEsc(AC_FAN[f] || f)}</div>`)
+            .join("")
+        : "";
+
+      const sms = (c && c.attributes.swing_modes) || [];
+      q(".smodes").innerHTML = sms.length
+        ? `<div class="lbl">Oscillazione</div>` +
+          sms
+            .map((s) => `<div class="mode${c.attributes.swing_mode === s ? " on" : ""}" data-s="${acEsc(s)}">${acEsc(AC_SWING[s] || s)}</div>`)
+            .join("")
+        : "";
+
+      const chips = [];
+      if (cfg.fan) {
+        const f = this._st(cfg.fan);
+        const on = !this._bad(f) && f.state === "on";
+        chips.push(`<div class="chip${on ? " active" : ""}" data-t="${acEsc(cfg.fan)}"><ha-icon icon="${on ? "mdi:fan" : "mdi:fan-off"}"></ha-icon>Ventola</div>`);
+      }
+      if (cfg.door) {
+        const d = this._st(cfg.door);
+        const open = !this._bad(d) && d.state === "on";
+        const ro = cfg.door.startsWith("binary_sensor.");
+        chips.push(`<div class="chip${ro ? " ro" : ""}${open ? " alert" : ""}" ${ro ? "" : `data-t="${acEsc(cfg.door)}"`}><ha-icon icon="${open ? "mdi:door-open" : "mdi:door-closed"}"></ha-icon>${open ? "Porta aperta" : "Porta chiusa"}</div>`);
+      }
+      q(".chips").innerHTML = chips.join("");
+      const tv = this._targetText(c);
+      const v = q(".tset .v");
+      v.textContent = tv.t;
+      v.classList.toggle("dim", tv.dim);
     }
   }
 
@@ -2060,7 +2813,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   window.customCards.push({
     type: "heating-ac-card",
     name: "Heating AC",
-    description: "Riga climatizzatore: modalità, oscillazione, temperatura target e stato.",
+    description: "Climatizzatore a riga o a blocco: modalità, oscillazione, ventola, temperatura target e popup con grafico.",
   });
 }
 
