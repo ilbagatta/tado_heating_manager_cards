@@ -39,7 +39,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.9.0`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.9.1`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -85,9 +85,10 @@ Nome, termometro, temperatura della valvola, ventola e offset lasciati vuoti si 
 Manager con lo stesso `entity` (la ventola si imposta nella stanza: *Impostazioni → Tado Heating Manager → stanza →
 Modifica*).
 
-Con `layout: tile` (nell'editor: *Aspetto → Blocco*) la card diventa un blocco come quelli di `heating-summary-card`:
-nome, ventola (un tocco la accende/spegne), temperatura grande con quella della valvola (V), target e offset (Δ);
-nella vista a sezioni ne stanno tre per riga. Un tocco sul blocco apre lo stesso popup della riga.
+Con `layout: tile` (nell'editor: *Aspetto → Blocco*) la card diventa un blocco nello stile di `heating-summary-card`
+con gli stessi comandi della riga: modalità (fiamma, apre il menu Caldo/Auto/Spento), ventola, −/+ della temperatura
+target, più temperatura grande, valvola (V) e offset (Δ). Nella vista a sezioni ne stanno tre per riga. Un tocco sul
+blocco apre lo stesso popup della riga; la pressione lunga sui tasti apre i dettagli.
 
 ```yaml
 type: custom:heating-radiators-card

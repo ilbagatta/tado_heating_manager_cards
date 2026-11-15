@@ -12,7 +12,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.9.0";
+const THM_CARDS_VERSION = "2.9.1";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -452,7 +452,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   };
   const HR_HELPERS = {
     name: "Vuoto: nome della stanza in Tado Heating Manager.",
-    layout: "Blocco: temperatura grande, valvola e offset; tre per riga.",
+    layout: "Blocco: stessi comandi della riga (modalità, ventola, −/+), tre per riga.",
     temp_termometro: "Vuoto: il termometro configurato nella stanza.",
     temp_valvola: "Vuoto: il sensore della valvola HomeKit della stanza.",
     fan: "Vuoto: la ventola configurata nella stanza (se c'è).",
@@ -515,7 +515,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     }
 
     getGridOptions() {
-      return this._isTile() ? { columns: 4, min_columns: 3 } : { columns: "full" };
+      return this._isTile() ? { columns: 4, min_columns: 4 } : { columns: "full" };
     }
 
     static getStubConfig(hass) {
@@ -717,46 +717,56 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       });
     }
 
-    // ---- blocco (layout: tile), stesso aspetto delle tessere di heating-summary-card ----
+    // ---- blocco (layout: tile): stile delle tessere di heating-summary-card, comandi della riga ----
     _buildTile() {
       this.shadowRoot.innerHTML = `
         <style>
           :host { display: block; height: 100%; }
           ha-card {
-            box-sizing: border-box; height: 100%; min-height: 92px; padding: 10px 12px; border-radius: var(--ha-card-border-radius, 14px);
+            box-sizing: border-box; height: 100%; padding: 10px 12px 12px; border-radius: var(--ha-card-border-radius, 14px);
             box-shadow: none; overflow: hidden; cursor: pointer; color: var(--primary-text-color);
             border: 2px solid transparent; transition: border-color .4s ease, background .4s ease;
-            display: flex; flex-direction: column; justify-content: space-between;
+            display: flex; flex-direction: column; gap: 6px; container-type: inline-size;
           }
-          ha-card.heat { border-color: rgba(255,138,61,.4); }
-          ha-card.heating { background-image: linear-gradient(rgba(255,122,40,.18), rgba(255,122,40,.18)); border-color: rgba(255,138,61,.65); }
-          ha-card.auto { border-color: rgba(76,175,80,.6); }
-          ha-card.off .body { opacity: .72; }
-          .rtop { display: flex; align-items: center; gap: 4px; min-height: 26px; }
+          ha-card.heat { border-color: rgba(255,138,61,.45); }
+          ha-card.hot { border-color: ${HR_ORANGE}; }
+          ha-card.heating { background-image: linear-gradient(rgba(255,122,40,.18), rgba(255,122,40,.18)); }
+          ha-card.auto { border-color: ${HR_GREEN}; }
+          ha-card.off .mid { opacity: .72; }
+          .top { display: flex; align-items: center; gap: 4px; min-height: 32px; }
           .rname { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-          .rflame { --mdc-icon-size: 18px; color: ${HR_ORANGE}; display: none; transform-origin: 50% 90%; }
-          ha-card.heating .rflame { display: inline-flex; animation: fiamma-flicker .9s ease-in-out infinite; }
-          .rfan {
-            width: 26px; height: 26px; margin-right: -4px; border-radius: 50%; flex: none; cursor: pointer;
-            display: flex; align-items: center; justify-content: center; --mdc-icon-size: 18px; color: var(--disabled-text-color, #9e9e9e);
+          .btn {
+            width: 32px; height: 32px; border-radius: 50%; background: rgba(128,128,128,.18); flex: none;
+            display: flex; align-items: center; justify-content: center; cursor: pointer; --mdc-icon-size: 18px;
           }
-          .rfan:hover { background: rgba(128,128,128,.18); }
-          .rfan.on { color: #29b6f6; }
-          .rfan.on ha-icon { animation: ventola-spin 1.2s linear infinite; }
-          .rfan ha-icon { display: inline-flex; transform-origin: 50% 50%; }
-          .rtemp { font-size: 26px; font-weight: 400; margin-top: 4px; line-height: 1.1; white-space: nowrap; }
-          .rv { font-size: 12px; color: ${HR_VALVE}; margin-left: 6px; font-weight: 500; vertical-align: 3px; }
-          .rv:empty { display: none; }
-          .rsub { font-size: 12.5px; color: var(--secondary-text-color); margin-top: 3px; white-space: nowrap; display: flex; justify-content: space-between; gap: 6px; }
-          ha-card.heating .st { color: ${HR_ORANGE}; }
-          ha-card.auto .st { color: ${HR_GREEN}; }
-          .roff { flex: none; font-variant-numeric: tabular-nums; }
-          ha-card { container-type: inline-size; }
+          .btn ha-icon { display: inline-flex; transform-origin: 50% 90%; }
+          .btn.fan ha-icon { transform-origin: 50% 50%; }
+          .btn.flame.on ha-icon { animation: fiamma-flicker .9s ease-in-out infinite; }
+          .btn.fan.on ha-icon { animation: ventola-spin 1.2s linear infinite; }
+          .mid { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+          .rtemp { font-size: 26px; font-weight: 400; line-height: 1.1; white-space: nowrap; }
+          .rv { font-size: 12px; color: ${HR_VALVE}; font-weight: 500; white-space: nowrap; }
+          .rv:empty, .roff:empty { display: none; }
+          .roff { margin-left: auto; font-size: 12px; color: var(--secondary-text-color); white-space: nowrap; font-variant-numeric: tabular-nums; }
+          .temp {
+            height: 36px; border-radius: 14px; background: rgba(128,128,128,.18); margin-top: auto;
+            display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px; align-items: center;
+          }
+          .temp .v { font-size: 15px; font-weight: 500; text-align: center; white-space: nowrap; }
+          .temp .s {
+            width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; --mdc-icon-size: 18px; border-radius: 50%;
+          }
+          .btn:hover, .temp .s:hover { background: rgba(128,128,128,.3); }
           @container (max-width: 135px) {
             .rname { font-size: 13px; }
+            .btn { width: 28px; height: 28px; --mdc-icon-size: 16px; }
             .rtemp { font-size: 21px; }
-            .rv { font-size: 10.5px; margin-left: 3px; vertical-align: 2px; }
-            .rsub { font-size: 11.5px; }
+            .rv, .roff { font-size: 10.5px; }
+            .mid { flex-wrap: wrap; row-gap: 0; gap: 4px; }
+            .roff { margin-left: 0; }
+            .temp { grid-template-columns: 30px minmax(0, 1fr) 30px; }
+            .temp .s { width: 30px; }
           }
           @keyframes fiamma-flicker {
             0%, 100% { transform: scale(1, 1) rotate(0deg); }
@@ -768,10 +778,19 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
         </style>
         <ha-card tabindex="0" role="button">
-          <div class="rtop"><div class="rname"></div><div class="rfan" data-a="fan"><ha-icon icon="mdi:fan"></ha-icon></div><ha-icon class="rflame" icon="mdi:fire"></ha-icon></div>
-          <div class="body">
-            <div class="rtemp"><span class="t"></span><span class="rv" title="Temperatura della valvola"></span></div>
-            <div class="rsub"><span class="st"></span><span class="roff" title="Offset della valvola"></span></div>
+          <div class="top">
+            <div class="rname"></div>
+            <div class="btn fan" data-a="fan"><ha-icon icon="mdi:fan"></ha-icon></div>
+            <div class="btn flame" data-a="mode"><ha-icon icon="mdi:fire"></ha-icon></div>
+          </div>
+          <div class="mid">
+            <span class="rtemp"></span><span class="rv" title="Temperatura della valvola"></span>
+            <span class="roff" title="Offset della valvola"></span>
+          </div>
+          <div class="temp">
+            <div class="s" data-a="minus"><ha-icon icon="mdi:minus"></ha-icon></div>
+            <div class="v"></div>
+            <div class="s" data-a="plus"><ha-icon icon="mdi:plus"></ha-icon></div>
           </div>
         </ha-card>`;
       const $ = (q) => this.shadowRoot.querySelector(q);
@@ -779,17 +798,18 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       this._el = {
         tile: true,
         name: $(".rname"),
-        fan: $(".rfan"),
-        fanIcon: $(".rfan ha-icon"),
-        temp: $(".rtemp .t"),
+        flame: $(".btn.flame"),
+        fan: $(".btn.fan"),
+        fanIcon: $(".btn.fan ha-icon"),
+        temp: $(".rtemp"),
         valve: $(".rv"),
-        state: $(".st"),
         off: $(".roff"),
+        value: $(".temp .v"),
       };
       this._closeDialog();
       this._card.addEventListener("click", () => this._openDialog());
       this._card.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter" || ev.key === " ") {
+        if (ev.target === this._card && (ev.key === "Enter" || ev.key === " ")) {
           ev.preventDefault();
           this._openDialog();
         }
@@ -813,45 +833,45 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       return ov === undefined || ov === null || ov === "" || isNaN(Number(ov)) ? null : Number(ov);
     }
 
+    // stessi colori e stati della riga
     _updateTile() {
       const cfg = this._cfg;
       const c = this._st(cfg.entity);
       const e = this._el;
       const fmt = (v) => (v === undefined || v === null || v === "" || isNaN(Number(v)) ? "--" : Number(v).toFixed(1));
       const bad = this._bad(c);
-      const off = bad || c.state === "off";
-      const heating = !off && c.attributes.hvac_action === "heating";
-      const cls = [off ? "off" : "on"];
+      const heating = !bad && c.state !== "off" && c.attributes.hvac_action === "heating";
+      const cls = [];
+      if (bad || c.state === "off") cls.push("off");
       if (heating) cls.push("heating");
-      if (!off && c.state === "auto") cls.push("auto");
-      else if (!off && c.state === "heat") cls.push("heat");
+      if (c && c.state === "auto") cls.push("auto");
+      else if (heating) cls.push("hot");
+      else if (c && c.state === "heat") cls.push("heat");
       this._card.className = cls.join(" ");
+
+      const color = c && c.state === "auto" ? HR_GREEN : c && c.state === "heat" ? HR_ORANGE : "var(--primary-text-color)";
+      e.flame.style.color = color;
+      e.flame.classList.toggle("on", heating);
+      const pm = c && c.state === "auto" ? HR_GREEN : c && c.state === "heat" ? HR_ORANGE : HR_BLUE;
+      this.shadowRoot.querySelectorAll(".temp .s").forEach((x) => (x.style.color = pm));
 
       e.name.textContent = cfg.name || (c && c.attributes.friendly_name) || cfg.entity;
       const ts = this._st(cfg.temp_termometro);
       const temp = !this._bad(ts) && !isNaN(Number(ts.state)) ? ts.state : c && c.attributes.current_temperature;
-      e.temp.textContent = `${fmt(temp)}°`;
+      e.temp.textContent = !c ? "n.d." : c.state === "unavailable" ? "n.d." : `${fmt(temp)}°`;
       const vs = this._st(cfg.temp_valvola);
       e.valve.textContent = cfg.temp_valvola && !this._bad(vs) && !isNaN(Number(vs.state)) ? `V ${fmt(vs.state)}°` : "";
-      e.state.textContent = !c
-        ? "non trovato"
-        : bad
-          ? "n.d."
-          : off
-            ? "spento"
-            : c.attributes.temperature != null
-              ? `→ ${fmt(c.attributes.temperature)}°`
-              : "acceso";
       const o = bad ? null : this._offsetNum(c);
       e.off.textContent = o === null ? "" : `Δ ${o > 0 ? "+" : ""}${o.toFixed(1)}°`;
+      e.value.textContent = bad ? "--" : fmt(c.attributes.temperature) === "--" ? "--" : `${fmt(c.attributes.temperature)}°`;
 
       if (cfg.fan) {
         const f = this._st(cfg.fan);
         const fb = this._bad(f);
         e.fan.style.display = "";
         e.fanIcon.setAttribute("icon", fb ? "mdi:fan-off" : "mdi:fan");
+        e.fan.style.color = fb ? "var(--disabled-text-color)" : f.state === "on" ? "#29b6f6" : "var(--secondary-text-color)";
         e.fan.classList.toggle("on", !fb && f.state === "on");
-        e.fan.title = `Ventola ${fb ? "non disponibile" : f.state === "on" ? "accesa" : "spenta"}`;
       } else {
         e.fan.style.display = "none";
       }
@@ -1382,7 +1402,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         <style>
           :host { display: block; }
           .list { display: flex; flex-direction: column; gap: 8px; }
-          .list.tile { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+          .list.tile { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
           .list.tile ha-card.empty { grid-column: 1 / -1; }
           ha-card.empty { padding: 16px; color: var(--secondary-text-color); }
         </style>
