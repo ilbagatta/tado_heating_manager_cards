@@ -12,7 +12,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.8.0";
+const THM_CARDS_VERSION = "2.8.1";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1353,7 +1353,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       if (!this._config) return;
       if (!this._quotaIds || !this._quotaFromReg) this._quotaIds = this._resolveQuota();
       const ids = ["sensor.hp_all_rooms", "switch.hp_all_enabled", ...Object.values(this._quotaIds)];
-      this._rooms().forEach((r) => ids.push(r.climate, r.thermometer, `sensor.hp_${r.slug}_current`, `switch.hp_${r.slug}_enabled`));
+      this._rooms().forEach((r) => ids.push(r.climate, r.thermometer, r.fan, `sensor.hp_${r.slug}_current`, `switch.hp_${r.slug}_enabled`));
       const sig = ids.map((id) => {
         const s = this._st(id);
         return s ? s.state + JSON.stringify(s.attributes) : "-";
@@ -1385,7 +1385,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           ha-card.warm .hicon ha-icon { animation: hs-flicker 1s ease-in-out infinite; transform-origin: 50% 90%; }
           .htxt { min-width: 0; flex: 1; }
           .title { font-size: 17px; font-weight: 600; line-height: 1.2; }
-          .sub { font-size: 12.5px; color: var(--secondary-text-color); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .sub { font-size: 12.5px; color: var(--secondary-text-color); margin-top: 2px; line-height: 1.35; }
           .avg { text-align: right; flex: none; }
           .avg .v { font-size: 26px; font-weight: 300; line-height: 1; letter-spacing: -.5px; }
           .avg .v small { font-size: 14px; margin-left: 1px; }
@@ -1403,11 +1403,17 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .rname { font-size: 13px; font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .rflame { --mdc-icon-size: 16px; color: ${HS_ORANGE}; display: none; transform-origin: 50% 90%; }
           .room.heating .rflame { display: inline-flex; animation: hs-flicker .9s ease-in-out infinite; }
+          .rfan { --mdc-icon-size: 16px; color: var(--disabled-text-color, #9e9e9e); display: inline-flex; }
+          .rfan.on { color: #29b6f6; }
+          .rfan.on ha-icon { animation: hs-spin 1.2s linear infinite; }
+          .rfan ha-icon { --mdc-icon-size: 16px; display: inline-flex; }
+          .plan { display: flex; flex-direction: column; gap: 4px; }
+          .ch { display: flex; gap: 10px; font-size: 12.5px; color: var(--secondary-text-color); padding-left: 26px; }
+          .ch .w { flex: none; min-width: 64px; font-weight: 600; color: var(--primary-text-color); font-variant-numeric: tabular-nums; }
+          .ch .a { min-width: 0; }
           .rtemp { font-size: 22px; font-weight: 400; margin-top: 4px; line-height: 1.1; }
           .rsub { font-size: 11.5px; color: var(--secondary-text-color); margin-top: 2px; white-space: nowrap; }
           .room.heating .rsub { color: ${HS_ORANGE}; }
-          .rnext { font-size: 11px; color: var(--secondary-text-color); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-          .rnext:empty { display: none; }
           .foot { position: relative; display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
           .foot:empty { display: none; }
           .line { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--secondary-text-color); min-width: 0; }
@@ -1420,6 +1426,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .bar > div { height: 100%; border-radius: 3px; transition: width .6s ease, background .6s ease; }
           .q { flex: 1; min-width: 0; }
           .empty { position: relative; margin-top: 12px; font-size: 13px; color: var(--secondary-text-color); }
+          @keyframes hs-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
           @keyframes hs-flicker {
             0%, 100% { transform: scale(1, 1) rotate(0deg); }
             25% { transform: scale(1.06, .94) rotate(-3deg); }
@@ -1463,7 +1470,9 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       const planOn = !!en && en.state === "on";
       const next = planOn && cur && cur.attributes.next_change
         ? { when: cur.attributes.next_change, value: cur.attributes.next_value, name: r.name } : null;
-      return { r, c, temp, bad, off, heating, target, next, auto: !off && c.state === "auto" };
+      const f = this._st(r.fan);
+      const fan = !r.fan ? null : !f || f.state === "unavailable" || f.state === "unknown" ? "bad" : f.state === "on" ? "on" : "off";
+      return { r, c, temp, bad, off, heating, target, next, fan, auto: !off && c.state === "auto" };
     }
 
     _update() {
@@ -1480,10 +1489,12 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       e.sub.textContent = !rooms.length
         ? "Nessun termosifone"
         : heating
-          ? `${heating} in riscaldamento · ${on} di ${rooms.length} accesi`
+          ? `${heating} in riscaldamento · ${on}/${rooms.length} accesi`
           : on
-            ? `${on} di ${rooms.length} accesi · temperatura raggiunta`
+            ? `${on}/${rooms.length} accesi · temperatura raggiunta`
             : "Tutti spenti";
+      const fansOn = rooms.filter((x) => x.fan === "on").length;
+      if (fansOn) e.sub.textContent += fansOn === 1 ? " · 1 ventola" : ` · ${fansOn} ventole`;
       e.avgWrap.style.display = avg === null ? "none" : "";
       e.avg.innerHTML = avg === null ? "" : `${avg.toFixed(1)}<small>°</small>`;
 
@@ -1491,12 +1502,13 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         ? rooms.map((x) => {
             const cls = ["room", x.off ? "off" : "on", x.heating ? "heating" : "", x.auto ? "auto" : ""].join(" ");
             const sub = x.bad ? "non disponibile" : x.off ? "spento" : x.target !== null ? `obiettivo ${x.target.toFixed(1)}°` : "acceso";
-            const nxt = x.next ? `${hsTime(x.next.when)} → ${hsShortValue(x.next.value)}` : "";
+            const fan = x.fan
+              ? `<span class="rfan ${x.fan === "on" ? "on" : ""}" title="Ventola ${x.fan === "on" ? "accesa" : x.fan === "off" ? "spenta" : "non disponibile"}"><ha-icon icon="${x.fan === "bad" ? "mdi:fan-off" : "mdi:fan"}"></ha-icon></span>`
+              : "";
             return `<div class="${cls}">
-                <div class="rtop"><div class="rname">${hsEsc(x.r.name)}</div><ha-icon class="rflame" icon="mdi:fire"></ha-icon></div>
+                <div class="rtop"><div class="rname">${hsEsc(x.r.name)}</div>${fan}<ha-icon class="rflame" icon="mdi:fire"></ha-icon></div>
                 <div class="rtemp">${hsTemp(x.temp)}°</div>
                 <div class="rsub">${hsEsc(sub)}</div>
-                <div class="rnext">${hsEsc(nxt)}</div>
               </div>`;
           }).join("")
         : `<div class="empty">Aggiungi le stanze in Tado Heating Manager.</div>`;
@@ -1506,12 +1518,23 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         const hub = this._st("switch.hp_all_enabled");
         const hubOn = !!hub && hub.state === "on";
         const nexts = rooms.map((x) => x.next).filter(Boolean).sort((a, b) => new Date(a.when) - new Date(b.when));
-        const n = nexts[0];
-        const txt = !hubOn
-          ? "Programmi sospesi"
-          : n ? `Prossimo: <b>${hsEsc(n.name)}</b> ${hsEsc(hsShortValue(n.value))} · ${hsEsc(hsTime(n.when))}` : "Nessun cambio in programma";
-        foot.push(`<div class="line"><ha-icon icon="mdi:calendar-clock"></ha-icon><span class="t">${txt}</span>
-          <span class="pill ${hubOn ? "on" : ""}">${hubOn ? "Programmi attivi" : "Programmi spenti"}</span></div>`);
+        // un cambio per stanza; quelli alla stessa ora stanno sulla stessa riga
+        const groups = [];
+        nexts.forEach((n) => {
+          const label = hsTime(n.when);
+          const g = groups.find((x) => x.label === label);
+          const item = `${hsEsc(n.name)} → ${hsEsc(hsShortValue(n.value))}`;
+          if (g) g.items.push(item);
+          else groups.push({ label, items: [item] });
+        });
+        const MAX = 4;
+        const head = !hubOn ? "Programmi sospesi" : groups.length ? "Prossimi cambi" : "Nessun cambio in programma";
+        const rows = hubOn
+          ? groups.slice(0, MAX).map((g) => `<div class="ch"><span class="w">${hsEsc(g.label)}</span><span class="a">${g.items.join(", ")}</span></div>`)
+          : [];
+        if (hubOn && groups.length > MAX) rows.push(`<div class="ch"><span class="w"></span><span class="a">e altri ${groups.length - MAX} orari…</span></div>`);
+        foot.push(`<div class="plan"><div class="line"><ha-icon icon="mdi:calendar-clock"></ha-icon><span class="t">${head}</span>
+          <span class="pill ${hubOn ? "on" : ""}">${hubOn ? "Programmi attivi" : "Programmi spenti"}</span></div>${rows.join("")}</div>`);
       }
       if (this._config.show_quota) {
         const q = (k) => this._st(this._quotaIds[k]);
