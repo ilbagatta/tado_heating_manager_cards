@@ -39,7 +39,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.9.3`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.9.4`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -93,6 +93,9 @@ type: custom:heating-radiators-card
 layout: tile                      # facoltativo: blocchi affiancati invece delle righe
 exclude:                          # facoltativo: stanze da non mostrare
   - climate.termo_bagno
+names:                            # facoltativo: nome mostrato solo in questa card
+  - entity: climate.termo_soggiorno
+    name: Scala
 ```
 
 Una `heating-radiator-card` per ogni stanza, nell'ordine delle stanze: le stanze nuove compaiono da sole.

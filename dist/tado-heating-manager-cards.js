@@ -12,7 +12,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.9.3";
+const THM_CARDS_VERSION = "2.9.4";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1352,6 +1352,9 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
    * Uso:  type: custom:heating-radiators-card
    *       exclude: [climate.xxx]   # opzionale: stanze da non mostrare
    *       layout: tile             # opzionale: blocchi affiancati invece delle righe
+   *       names:                   # opzionale: nome mostrato al posto di quello della stanza
+   *         - entity: climate.xxx
+   *           name: Scala
    * Termometro, valvola, ventola e offset di ogni riga arrivano dalla stanza (vedi heating-radiator-card).
    */
   class HeatingRadiatorsCard extends HTMLElement {
@@ -1385,10 +1388,27 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         schema: [
           { name: "layout", selector: window.THM_HR_LAYOUT_SELECTOR },
           { name: "exclude", selector: { entity: { domain: "climate", multiple: true } } },
+          {
+            name: "names",
+            selector: {
+              object: {
+                multiple: true,
+                label_field: "name",
+                fields: {
+                  entity: { label: "Termostato (climate)", required: true, selector: { entity: { domain: "climate" } } },
+                  name: { label: "Nome", required: true, selector: { text: {} } },
+                },
+              },
+            },
+          },
         ],
-        computeLabel: (s) => ({ exclude: "Stanze da non mostrare", layout: "Aspetto" }[s.name] || s.name),
+        computeLabel: (s) =>
+          ({ exclude: "Stanze da non mostrare", layout: "Aspetto", names: "Nomi personalizzati" }[s.name] || s.name),
         computeHelper: (s) =>
-          s.name === "exclude" ? "Le altre stanze di Tado Heating Manager compaiono da sole, nell'ordine delle stanze." : undefined,
+          ({
+            exclude: "Le altre stanze di Tado Heating Manager compaiono da sole, nell'ordine delle stanze.",
+            names: "Solo in questa card. Le stanze non elencate usano il nome di Tado Heating Manager.",
+          }[s.name]),
       };
     }
 
@@ -1399,11 +1419,21 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       return rooms.filter((r) => r.climate && !skip.has(r.climate));
     }
 
+    // Nomi personalizzati: elenco [{entity, name}] (editor) o mappa {climate: nome} (YAML).
+    _names() {
+      const n = this._config.names;
+      const out = {};
+      if (Array.isArray(n)) n.forEach((x) => x && x.entity && x.name && (out[x.entity] = String(x.name)));
+      else if (n && typeof n === "object") Object.keys(n).forEach((k) => n[k] && (out[k] = String(n[k])));
+      return out;
+    }
+
     set hass(hass) {
       this._hass = hass;
       if (!this._config) return;
       const rooms = this._rooms();
-      const sig = (this._config.layout || "row") + ":" + rooms.map((r) => r.climate).join("|");
+      const sig = (this._config.layout || "row") + ":" + rooms.map((r) => r.climate).join("|") + ":" +
+        JSON.stringify(this._names());
       if (sig !== this._sig) {
         this._sig = sig;
         this._build(rooms);
@@ -1430,9 +1460,13 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         list.querySelector(".thm-cfg").addEventListener("click", thmOpenConfig);
         return;
       }
+      const names = this._names();
       rooms.forEach((r) => {
         const card = document.createElement("heating-radiator-card");
-        card.setConfig(tile ? { entity: r.climate, layout: "tile" } : { entity: r.climate });
+        const cfg = { entity: r.climate };
+        if (tile) cfg.layout = "tile";
+        if (names[r.climate]) cfg.name = names[r.climate];
+        card.setConfig(cfg);
         list.appendChild(card);
         this._cards.push(card);
       });
