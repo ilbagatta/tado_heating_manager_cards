@@ -39,7 +39,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.8.1`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.8.3`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -106,7 +106,7 @@ exclude:                        # facoltativo
   - climate.termo_bagno
 ```
 
-Una tessera per stanza (temperatura del termometro, obiettivo o "spento", ventola se impostata nella stanza), quanti
+Una tessera per stanza (temperatura del termometro e, in piccolo, della valvola e l'offset, obiettivo o "spento", ventola se impostata nella stanza), quanti
 sono accesi, le ventole accese e la media; sotto, i prossimi cambi di tutte le stanze raggruppati per ora (fino a 4
 orari). Lo sfondo si scalda quando un termosifone riscalda.
 

@@ -12,7 +12,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.8.1";
+const THM_CARDS_VERSION = "2.8.3";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1353,7 +1353,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       if (!this._config) return;
       if (!this._quotaIds || !this._quotaFromReg) this._quotaIds = this._resolveQuota();
       const ids = ["sensor.hp_all_rooms", "switch.hp_all_enabled", ...Object.values(this._quotaIds)];
-      this._rooms().forEach((r) => ids.push(r.climate, r.thermometer, r.fan, `sensor.hp_${r.slug}_current`, `switch.hp_${r.slug}_enabled`));
+      this._rooms().forEach((r) => ids.push(r.climate, r.thermometer, r.valve_temperature, r.valve, r.offset_entity, r.fan, `sensor.hp_${r.slug}_current`, `switch.hp_${r.slug}_enabled`));
       const sig = ids.map((id) => {
         const s = this._st(id);
         return s ? s.state + JSON.stringify(s.attributes) : "-";
@@ -1412,8 +1412,10 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .ch .w { flex: none; min-width: 64px; font-weight: 600; color: var(--primary-text-color); font-variant-numeric: tabular-nums; }
           .ch .a { min-width: 0; }
           .rtemp { font-size: 22px; font-weight: 400; margin-top: 4px; line-height: 1.1; }
-          .rsub { font-size: 11.5px; color: var(--secondary-text-color); margin-top: 2px; white-space: nowrap; }
-          .room.heating .rsub { color: ${HS_ORANGE}; }
+          .roff { flex: none; font-size: 10.5px; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+          .rv { font-size: 11px; color: #ba68c8; margin-left: 5px; font-weight: 500; white-space: nowrap; vertical-align: 2px; }
+          .rsub { font-size: 11.5px; color: var(--secondary-text-color); margin-top: 2px; white-space: nowrap; display: flex; justify-content: space-between; gap: 6px; }
+          .room.heating .rsub > span:first-child { color: ${HS_ORANGE}; }
           .foot { position: relative; display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
           .foot:empty { display: none; }
           .line { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--secondary-text-color); min-width: 0; }
@@ -1470,9 +1472,16 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       const planOn = !!en && en.state === "on";
       const next = planOn && cur && cur.attributes.next_change
         ? { when: cur.attributes.next_change, value: cur.attributes.next_value, name: r.name } : null;
+      // valvola: sensore HomeKit della temperatura, altrimenti l'attributo del climate HomeKit
+      const vs = this._st(r.valve_temperature);
+      const vc = this._st(r.valve);
+      const valve = hsNum(vs && vs.state) ?? hsNum(vc && vc.attributes.current_temperature);
+      // offset: quello gestito da Tado Heating Manager, altrimenti l'attributo del climate
+      const os = this._st(r.offset_entity);
+      const offset = hsNum(os && os.state) ?? hsNum(c && c.attributes.offset_celsius);
       const f = this._st(r.fan);
       const fan = !r.fan ? null : !f || f.state === "unavailable" || f.state === "unknown" ? "bad" : f.state === "on" ? "on" : "off";
-      return { r, c, temp, bad, off, heating, target, next, fan, auto: !off && c.state === "auto" };
+      return { r, c, temp, valve, offset, bad, off, heating, target, next, fan, auto: !off && c.state === "auto" };
     }
 
     _update() {
@@ -1501,14 +1510,14 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       e.rooms.innerHTML = rooms.length
         ? rooms.map((x) => {
             const cls = ["room", x.off ? "off" : "on", x.heating ? "heating" : "", x.auto ? "auto" : ""].join(" ");
-            const sub = x.bad ? "non disponibile" : x.off ? "spento" : x.target !== null ? `obiettivo ${x.target.toFixed(1)}°` : "acceso";
+            const sub = x.bad ? "n.d." : x.off ? "spento" : x.target !== null ? `→ ${x.target.toFixed(1)}°` : "acceso";
             const fan = x.fan
               ? `<span class="rfan ${x.fan === "on" ? "on" : ""}" title="Ventola ${x.fan === "on" ? "accesa" : x.fan === "off" ? "spenta" : "non disponibile"}"><ha-icon icon="${x.fan === "bad" ? "mdi:fan-off" : "mdi:fan"}"></ha-icon></span>`
               : "";
             return `<div class="${cls}">
                 <div class="rtop"><div class="rname">${hsEsc(x.r.name)}</div>${fan}<ha-icon class="rflame" icon="mdi:fire"></ha-icon></div>
-                <div class="rtemp">${hsTemp(x.temp)}°</div>
-                <div class="rsub">${hsEsc(sub)}</div>
+                <div class="rtemp">${hsTemp(x.temp)}°${x.valve !== null ? `<span class="rv" title="Temperatura della valvola">V ${hsTemp(x.valve)}°</span>` : ""}</div>
+                <div class="rsub"><span>${hsEsc(sub)}</span>${x.offset !== null ? `<span class="roff" title="Offset della valvola">Δ ${x.offset > 0 ? "+" : ""}${x.offset.toFixed(1)}°</span>` : ""}</div>
               </div>`;
           }).join("")
         : `<div class="empty">Aggiungi le stanze in Tado Heating Manager.</div>`;
