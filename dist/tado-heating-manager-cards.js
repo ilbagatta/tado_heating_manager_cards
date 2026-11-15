@@ -12,7 +12,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.10.0";
+const THM_CARDS_VERSION = "2.10.1";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -2147,10 +2147,13 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
             box-sizing: border-box; height: 100%; padding: 10px 12px 12px; border-radius: var(--ha-card-border-radius, 14px);
             box-shadow: none; overflow: hidden; cursor: pointer; color: var(--primary-text-color);
             border: 2px solid transparent; transition: border-color .4s ease, background .4s ease;
-            display: flex; flex-direction: column; gap: 6px; container-type: inline-size;
+            display: flex; flex-direction: column; gap: 6px; container-type: inline-size; position: relative;
           }
           ha-card.off .mid, ha-card.off .rst { opacity: .72; }
           .top { display: flex; align-items: center; gap: 4px; min-height: 32px; }
+          /* modalita' e oscillazione una sopra l'altra, in alto a destra */
+          .btns { position: absolute; top: 10px; right: 12px; display: flex; flex-direction: column; gap: 4px; }
+          .top, .mid { padding-right: 36px; }
           .rname { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .btn {
             width: 32px; height: 32px; border-radius: 50%; background: rgba(128,128,128,.18); flex: none;
@@ -2186,6 +2189,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           @container (max-width: 135px) {
             .rname { font-size: 13px; }
             .btn { width: 28px; height: 28px; --mdc-icon-size: 16px; }
+            .top, .mid { padding-right: 32px; }
             .rtemp { font-size: 21px; }
             .rh, .rst { font-size: 10.5px; }
             .mid { flex-wrap: wrap; row-gap: 0; gap: 4px; }
@@ -2198,8 +2202,10 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         <ha-card tabindex="0" role="button">
           <div class="top">
             <div class="rname"></div>
-            <div class="btn swing" data-a="swing"><ha-icon></ha-icon></div>
+          </div>
+          <div class="btns">
             <div class="btn mode" data-a="mode"><ha-icon></ha-icon></div>
+            <div class="btn swing" data-a="swing"><ha-icon></ha-icon></div>
           </div>
           <div class="mid">
             <span class="rtemp"></span><span class="rh" title="Umidità"></span>
