@@ -10,10 +10,12 @@ hacs.json                            filename = tado-heating-manager-cards.js
 tools/bump_resource.py               aggiorna ?v= della risorsa Lovelace (installazione manuale)
 ```
 
-Il file contiene sei card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
+Il file contiene sette card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
 `heating-planner-card` (HP_*), `heating-radiator-card` (HR_*), `heating-radiators-card` (una `heating-radiator-card`
 per stanza di `sensor.hp_all_rooms`; entrambe con `layout: tile` = blocchi come le tessere del riepilogo, `_buildTile`/`_updateTile`, griglia `columns: 4`; `heating-radiators-card` ha `columns: 2|3` per i blocchi, predefinito automatico), `heating-summary-card` (HS_*, riepilogo per la Home: tessere delle stanze,
-prossimo cambio, quota trovata come nella card della quota; al tocco `navigation_path`, predefinito `/tado-heating`), `heating-ac-card` (AC_*), `tado-quota-card` (TQ_*).
+prossimo cambio, quota trovata come nella card della quota; al tocco `navigation_path`, predefinito `/tado-heating`), `heating-ac-card` (AC_*), `heating-acs-card` (una `heating-ac-card` per climatizzatore: `entities` o, se vuoto, i climate con
+`cool`/`dry`/`fan_only` non nascosti, per nome; `layout`, `columns`, `exclude`, `names` come `heating-radiators-card`;
+lista e colonne condivise in `THM_LIST_CSS`/`THM_COLUMNS_SELECTOR`/`thmColumns`), `tado-quota-card` (TQ_*).
 Editor visuale: `static getConfigForm()` (schema `ha-form` disegnato da HA, nessun elemento editor) su tutte.
 `heating-radiator-card` usa `this._cfg` = config + valori presi dalla stanza con lo stesso climate
 (`name`, `thermometer`, `valve_temperature`, `fan`; l'offset da `offset_entity`), ricalcolata a ogni `hass`.

@@ -1,24 +1,52 @@
 /* Tado Heating Manager Cards
  * Card Lovelace per l'integrazione Tado Heating Manager (custom_components/tado_heating_manager).
- * Un solo file con sei card, senza dipendenze e senza build:
+ * Un solo file con sette card, senza dipendenze e senza build:
  *   custom:heating-planner-card    programmi a fasce di tutte le stanze (Feriali / Weekend)
  *   custom:heating-radiator-card   riga (o blocco, layout: tile) di un termosifone
  *   custom:heating-radiators-card  una riga per ogni termosifone di Tado Heating Manager
  *   custom:heating-summary-card    riepilogo per la Home (termosifoni, programmi, quota); al tocco apre la plancia
  *   custom:heating-ac-card         riga (o blocco, layout: tile) di un climatizzatore
+ *   custom:heating-acs-card        una riga (o un blocco) per ogni climatizzatore, trovati da soli
  *   custom:tado-quota-card         quota API Tado (stato, indicatori, provenienza delle chiamate, grafico)
  * Ogni card e' racchiusa in un blocco { } cosi' le costanti non si scontrano.
  *
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.11.0";
+const THM_CARDS_VERSION = "2.12.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
   window.history.pushState(null, "", THM_CONFIG_PATH);
   window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
 };
+// Colonne dei blocchi delle card di gruppo (heating-radiators-card, heating-acs-card).
+const THM_COLUMNS_SELECTOR = {
+  select: {
+    mode: "dropdown",
+    options: [
+      { value: "auto", label: "Automatico" },
+      { value: "2", label: "2 colonne" },
+      { value: "3", label: "3 colonne" },
+    ],
+  },
+};
+const THM_COLUMNS_HELPER = "Solo con Aspetto: Blocco. Automatico: quanti blocchi ci stanno (almeno 140 px l'uno).";
+// 2 o 3 (stringa dall'editor o numero dal YAML), altrimenti 0 = automatico.
+const thmColumns = (v) => {
+  const n = parseInt(v, 10);
+  return n === 2 || n === 3 ? n : 0;
+};
+// Stile della lista delle card di gruppo: righe in colonna o blocchi in griglia (.tile, .c2, .c3).
+const THM_LIST_CSS = `
+          :host { display: block; }
+          .list { display: flex; flex-direction: column; gap: 8px; }
+          .list.tile { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+          .list.tile.c2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .list.tile.c3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+          .list.tile ha-card.empty { grid-column: 1 / -1; }
+          ha-card.empty { padding: 16px; color: var(--secondary-text-color); }`;
+
 const THM_EMPTY_BTN =
   '<button class="thm-cfg" style="margin-top:10px;padding:8px 14px;border-radius:8px;border:1px solid var(--primary-color);background:none;color:var(--primary-color);cursor:pointer;font-size:.95em">Aggiungi le stanze</button>';
 console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#fff;background:#ff8a3d;font-weight:600", "color:#ff8a3d");
@@ -1398,19 +1426,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       return {
         schema: [
           { name: "layout", selector: window.THM_HR_LAYOUT_SELECTOR },
-          {
-            name: "columns",
-            selector: {
-              select: {
-                mode: "dropdown",
-                options: [
-                  { value: "auto", label: "Automatico" },
-                  { value: "2", label: "2 colonne" },
-                  { value: "3", label: "3 colonne" },
-                ],
-              },
-            },
-          },
+          { name: "columns", selector: THM_COLUMNS_SELECTOR },
           { name: "exclude", selector: { entity: { domain: "climate", multiple: true } } },
           {
             name: "names",
@@ -1435,7 +1451,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           }[s.name] || s.name),
         computeHelper: (s) =>
           ({
-            columns: "Solo con Aspetto: Blocco. Automatico: quanti blocchi ci stanno (almeno 140 px l'uno).",
+            columns: THM_COLUMNS_HELPER,
             exclude: "Le altre stanze di Tado Heating Manager compaiono da sole, nell'ordine delle stanze.",
             names: "Solo in questa card. Le stanze non elencate usano il nome di Tado Heating Manager.",
           }[s.name]),
@@ -1458,17 +1474,11 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       return out;
     }
 
-    // Colonne dei blocchi: 2 o 3 (stringa dall'editor o numero dal YAML), altrimenti automatico.
-    _columns() {
-      const n = parseInt(this._config.columns, 10);
-      return n === 2 || n === 3 ? n : 0;
-    }
-
     set hass(hass) {
       this._hass = hass;
       if (!this._config) return;
       const rooms = this._rooms();
-      const sig = (this._config.layout || "row") + ":" + this._columns() + ":" + rooms.map((r) => r.climate).join("|") + ":" +
+      const sig = (this._config.layout || "row") + ":" + thmColumns(this._config.columns) + ":" + rooms.map((r) => r.climate).join("|") + ":" +
         JSON.stringify(this._names());
       if (sig !== this._sig) {
         this._sig = sig;
@@ -1479,20 +1489,13 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
 
     _build(rooms) {
       this.shadowRoot.innerHTML = `
-        <style>
-          :host { display: block; }
-          .list { display: flex; flex-direction: column; gap: 8px; }
-          .list.tile { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
-          .list.tile.c2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-          .list.tile.c3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-          .list.tile ha-card.empty { grid-column: 1 / -1; }
-          ha-card.empty { padding: 16px; color: var(--secondary-text-color); }
+        <style>${THM_LIST_CSS}
         </style>
         <div class="list"></div>`;
       const list = this.shadowRoot.querySelector(".list");
       const tile = this._config.layout === "tile";
       list.classList.toggle("tile", tile);
-      const cols = tile ? this._columns() : 0;
+      const cols = tile ? thmColumns(this._config.columns) : 0;
       if (cols) list.classList.add("c" + cols);
       this._cards = [];
       if (!rooms.length) {
@@ -2850,6 +2853,167 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     type: "heating-ac-card",
     name: "Heating AC",
     description: "Climatizzatore a riga o a blocco: modalità, oscillazione, ventola, temperatura target e popup con grafico.",
+  });
+}
+
+// ===== heating-acs-card.js =====
+{
+  /* Heating ACs card: una heating-ac-card per ogni climatizzatore.
+   * Uso:  type: custom:heating-acs-card
+   *       entities: [climate.xxx]  # opzionale: solo questi, in quest'ordine (predefinito: trovati da soli)
+   *       exclude: [climate.yyy]   # opzionale: climatizzatori da non mostrare
+   *       layout: tile             # opzionale: blocchi affiancati invece delle righe
+   *       columns: 3               # opzionale, solo con layout: tile: blocchi per riga (2 o 3; predefinito: automatico)
+   *       names:                   # opzionale: nome mostrato al posto di quello del climatizzatore
+   *         - entity: climate.xxx
+   *           name: Cucina
+   * Trovati da soli: i climate che hanno tra gli hvac_modes cool, dry o fan_only (i termosifoni Tado no),
+   * non nascosti, in ordine di nome. Nome, termometro e ventola arrivano dalla stanza se ce n'e' una (vedi heating-ac-card).
+   */
+  const ACS_MODES = ["cool", "dry", "fan_only"];
+
+  class HeatingAcsCard extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+      this._sig = null;
+      this._cards = [];
+    }
+
+    setConfig(config) {
+      this._config = config || {};
+      this._sig = null;
+      if (this._hass) this.hass = this._hass;
+    }
+
+    getCardSize() {
+      return Math.max(1, this._cards.length);
+    }
+
+    getGridOptions() {
+      return { columns: "full" };
+    }
+
+    static getStubConfig() {
+      return {};
+    }
+
+    static getConfigForm() {
+      return {
+        schema: [
+          { name: "layout", selector: window.THM_HR_LAYOUT_SELECTOR },
+          { name: "columns", selector: THM_COLUMNS_SELECTOR },
+          { name: "entities", selector: { entity: { domain: "climate", multiple: true } } },
+          { name: "exclude", selector: { entity: { domain: "climate", multiple: true } } },
+          {
+            name: "names",
+            selector: {
+              object: {
+                multiple: true,
+                label_field: "name",
+                fields: {
+                  entity: { label: "Climatizzatore (climate)", required: true, selector: { entity: { domain: "climate" } } },
+                  name: { label: "Nome", required: true, selector: { text: {} } },
+                },
+              },
+            },
+          },
+        ],
+        computeLabel: (s) =>
+          ({
+            layout: "Aspetto",
+            columns: "Colonne dei blocchi",
+            entities: "Climatizzatori da mostrare",
+            exclude: "Climatizzatori da non mostrare",
+            names: "Nomi personalizzati",
+          }[s.name] || s.name),
+        computeHelper: (s) =>
+          ({
+            columns: THM_COLUMNS_HELPER,
+            entities: "Vuoto: tutti i climate con modalità freddo, deumidifica o ventola, in ordine di nome.",
+            names: "Solo in questa card. Gli altri usano il nome della stanza o del climate.",
+          }[s.name]),
+      };
+    }
+
+    _name(id) {
+      const st = this._hass.states[id];
+      return String((st && st.attributes.friendly_name) || id);
+    }
+
+    _acs() {
+      const skip = new Set(this._config.exclude || []);
+      const chosen = Array.isArray(this._config.entities) ? this._config.entities.filter(Boolean) : [];
+      if (chosen.length) return chosen.filter((id) => !skip.has(id));
+      const reg = this._hass.entities || {};
+      return Object.keys(this._hass.states)
+        .filter((id) => {
+          if (!id.startsWith("climate.") || skip.has(id)) return false;
+          if (reg[id] && reg[id].hidden) return false;
+          const modes = this._hass.states[id].attributes.hvac_modes || [];
+          return modes.some((m) => ACS_MODES.includes(m));
+        })
+        .sort((a, b) => this._name(a).localeCompare(this._name(b), "it"));
+    }
+
+    // Nomi personalizzati: elenco [{entity, name}] (editor) o mappa {climate: nome} (YAML).
+    _names() {
+      const n = this._config.names;
+      const out = {};
+      if (Array.isArray(n)) n.forEach((x) => x && x.entity && x.name && (out[x.entity] = String(x.name)));
+      else if (n && typeof n === "object") Object.keys(n).forEach((k) => n[k] && (out[k] = String(n[k])));
+      return out;
+    }
+
+    set hass(hass) {
+      this._hass = hass;
+      if (!this._config) return;
+      const acs = this._acs();
+      const sig = (this._config.layout || "row") + ":" + thmColumns(this._config.columns) + ":" + acs.join("|") + ":" +
+        JSON.stringify(this._names());
+      if (sig !== this._sig) {
+        this._sig = sig;
+        this._build(acs);
+      }
+      this._cards.forEach((c) => (c.hass = hass));
+    }
+
+    _build(acs) {
+      this.shadowRoot.innerHTML = `
+        <style>${THM_LIST_CSS}
+        </style>
+        <div class="list"></div>`;
+      const list = this.shadowRoot.querySelector(".list");
+      const tile = this._config.layout === "tile";
+      list.classList.toggle("tile", tile);
+      const cols = tile ? thmColumns(this._config.columns) : 0;
+      if (cols) list.classList.add("c" + cols);
+      this._cards = [];
+      if (!acs.length) {
+        list.innerHTML = `<ha-card class="empty">Nessun climatizzatore trovato: sceglili in "Climatizzatori da mostrare".</ha-card>`;
+        return;
+      }
+      const names = this._names();
+      acs.forEach((id) => {
+        const card = document.createElement("heating-ac-card");
+        const cfg = { entity: id };
+        if (tile) cfg.layout = "tile";
+        if (names[id]) cfg.name = names[id];
+        card.setConfig(cfg);
+        list.appendChild(card);
+        this._cards.push(card);
+      });
+    }
+  }
+
+  if (!customElements.get("heating-acs-card")) {
+    customElements.define("heating-acs-card", HeatingAcsCard);
+  }
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: "heating-acs-card",
+    name: "Heating ACs",
+    description: "Una riga (o un blocco) per ogni climatizzatore, trovati da soli o scelti a mano.",
   });
 }
 

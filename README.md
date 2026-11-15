@@ -16,6 +16,7 @@ e quella della quota richiedono l'integrazione Tado Heating Manager.
 | `custom:heating-summary-card` | Riepilogo per la Home: termosifoni, prossimo cambio, quota; un tocco apre la plancia Riscaldamento |
 | `custom:heating-radiators-card` | Una riga (o un blocco) di termosifone per ogni stanza di Tado Heating Manager, aggiunta da sola |
 | `custom:heating-ac-card` | Riga o blocco di un climatizzatore (modo, oscillazione, velocità, temperatura, popup con grafico) |
+| `custom:heating-acs-card` | Una riga (o un blocco) per ogni climatizzatore, trovati da soli o scelti a mano |
 | `custom:tado-quota-card` | Quota API Tado: stato, indicatori, provenienza delle chiamate, grafico |
 
 Le card sono separate dall'integrazione: dopo una modifica basta **ricaricare la dashboard**, senza riavviare Home Assistant.
@@ -39,7 +40,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.11.0`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.12.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -137,6 +138,23 @@ ventola, porta e grafico (temperatura, target e bande di raffreddamento/riscalda
 i dettagli. Da spento il target resta visibile attenuato (o "Spento" se il climate non lo conserva) e −/+ cambiano solo
 il target, senza accendere. Se il climatizzatore è il `climate` di una stanza di Tado Heating Manager, nome, termometro
 e ventola lasciati vuoti si prendono dalla stanza.
+
+`heating-acs-card` mette una `heating-ac-card` per ogni climatizzatore, come `heating-radiators-card` per i termosifoni.
+Senza `entities` li trova da soli: i climate con modalità freddo, deumidifica o ventola (i termosifoni Tado no), non
+nascosti, in ordine di nome.
+
+```yaml
+type: custom:heating-acs-card
+layout: tile                      # facoltativo: blocchi affiancati invece delle righe
+columns: 3                        # facoltativo, solo con layout: tile: blocchi per riga (2 o 3; predefinito: automatico)
+entities:                         # facoltativo: solo questi, in quest'ordine
+  - climate.condizionatore_cucina
+exclude:                          # facoltativo: climatizzatori da non mostrare
+  - climate.condizionatore_camera
+names:                            # facoltativo: nome mostrato solo in questa card
+  - entity: climate.condizionatore_cucina
+    name: Cucina
+```
 
 ```yaml
 type: custom:tado-quota-card
