@@ -12,7 +12,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.9.4";
+const THM_CARDS_VERSION = "2.9.5";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -733,7 +733,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           ha-card.hot { border-color: ${HR_ORANGE}; }
           ha-card.heating { background-image: linear-gradient(rgba(255,122,40,.18), rgba(255,122,40,.18)); }
           ha-card.auto { border-color: ${HR_GREEN}; }
-          ha-card.off .mid { opacity: .72; }
+          ha-card.off .mid > :not(.rfan) { opacity: .72; }
           .top { display: flex; align-items: center; gap: 4px; min-height: 32px; }
           .rname { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .btn {
@@ -741,10 +741,17 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
             display: flex; align-items: center; justify-content: center; cursor: pointer; --mdc-icon-size: 18px;
           }
           .btn ha-icon { display: inline-flex; transform-origin: 50% 90%; }
-          .btn.fan ha-icon { transform-origin: 50% 50%; }
           .btn.flame.on ha-icon { animation: fiamma-flicker .9s ease-in-out infinite; }
-          .btn.fan.on ha-icon { animation: ventola-spin 1.2s linear infinite; }
           .mid { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+          .rfan {
+            margin-left: auto; align-self: center; flex: none; cursor: pointer; display: inline-flex;
+            --mdc-icon-size: 20px; color: var(--secondary-text-color);
+          }
+          .rfan ha-icon { display: inline-flex; transform-origin: 50% 50%; }
+          .rfan.on { color: #29b6f6; }
+          .rfan.on ha-icon { animation: ventola-spin 1.2s linear infinite; }
+          .rfan.bad { color: var(--disabled-text-color, #9e9e9e); }
+          .mid.hasfan .roff { margin-left: 0; }
           .rtemp { font-size: 26px; font-weight: 400; line-height: 1.1; white-space: nowrap; }
           .rv { font-size: 12px; color: ${HR_VALVE}; font-weight: 500; white-space: nowrap; }
           .rv:empty, .roff:empty { display: none; }
@@ -767,6 +774,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
             .rv, .roff { font-size: 10.5px; }
             .mid { flex-wrap: wrap; row-gap: 0; gap: 4px; }
             .roff { margin-left: 0; }
+            .rfan { --mdc-icon-size: 17px; }
             .temp { grid-template-columns: 30px minmax(0, 1fr) 30px; }
             .temp .s { width: 30px; }
           }
@@ -782,12 +790,12 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         <ha-card tabindex="0" role="button">
           <div class="top">
             <div class="rname"></div>
-            <div class="btn fan" data-a="fan"><ha-icon icon="mdi:fan"></ha-icon></div>
             <div class="btn flame" data-a="mode"><ha-icon icon="mdi:fire"></ha-icon></div>
           </div>
           <div class="mid">
             <span class="rtemp"></span><span class="rv" title="Temperatura della valvola"></span>
             <span class="roff" title="Offset della valvola"></span>
+            <span class="rfan" data-a="fan"><ha-icon icon="mdi:fan"></ha-icon></span>
           </div>
           <div class="temp">
             <div class="s" data-a="minus"><ha-icon icon="mdi:minus"></ha-icon></div>
@@ -801,8 +809,9 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         tile: true,
         name: $(".rname"),
         flame: $(".btn.flame"),
-        fan: $(".btn.fan"),
-        fanIcon: $(".btn.fan ha-icon"),
+        mid: $(".mid"),
+        fan: $(".rfan"),
+        fanIcon: $(".rfan ha-icon"),
         temp: $(".rtemp"),
         valve: $(".rv"),
         off: $(".roff"),
@@ -873,11 +882,14 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         const f = this._st(cfg.fan);
         const fb = this._bad(f);
         e.fan.style.display = "";
+        e.mid.classList.add("hasfan");
         e.fanIcon.setAttribute("icon", fb ? "mdi:fan-off" : "mdi:fan");
-        e.fan.style.color = fb ? "var(--disabled-text-color)" : f.state === "on" ? "#29b6f6" : "var(--secondary-text-color)";
+        e.fan.classList.toggle("bad", fb);
         e.fan.classList.toggle("on", !fb && f.state === "on");
+        e.fan.title = fb ? "Ventola non disponibile" : f.state === "on" ? "Ventola accesa" : "Ventola spenta";
       } else {
         e.fan.style.display = "none";
+        e.mid.classList.remove("hasfan");
       }
     }
 
