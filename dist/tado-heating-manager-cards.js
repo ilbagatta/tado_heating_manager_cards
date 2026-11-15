@@ -12,7 +12,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.10.1";
+const THM_CARDS_VERSION = "2.11.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1362,6 +1362,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
    * Uso:  type: custom:heating-radiators-card
    *       exclude: [climate.xxx]   # opzionale: stanze da non mostrare
    *       layout: tile             # opzionale: blocchi affiancati invece delle righe
+   *       columns: 3               # opzionale, solo con layout: tile: blocchi per riga (2 o 3; predefinito: automatico)
    *       names:                   # opzionale: nome mostrato al posto di quello della stanza
    *         - entity: climate.xxx
    *           name: Scala
@@ -1397,6 +1398,19 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       return {
         schema: [
           { name: "layout", selector: window.THM_HR_LAYOUT_SELECTOR },
+          {
+            name: "columns",
+            selector: {
+              select: {
+                mode: "dropdown",
+                options: [
+                  { value: "auto", label: "Automatico" },
+                  { value: "2", label: "2 colonne" },
+                  { value: "3", label: "3 colonne" },
+                ],
+              },
+            },
+          },
           { name: "exclude", selector: { entity: { domain: "climate", multiple: true } } },
           {
             name: "names",
@@ -1413,9 +1427,15 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           },
         ],
         computeLabel: (s) =>
-          ({ exclude: "Stanze da non mostrare", layout: "Aspetto", names: "Nomi personalizzati" }[s.name] || s.name),
+          ({
+            exclude: "Stanze da non mostrare",
+            layout: "Aspetto",
+            columns: "Colonne dei blocchi",
+            names: "Nomi personalizzati",
+          }[s.name] || s.name),
         computeHelper: (s) =>
           ({
+            columns: "Solo con Aspetto: Blocco. Automatico: quanti blocchi ci stanno (almeno 140 px l'uno).",
             exclude: "Le altre stanze di Tado Heating Manager compaiono da sole, nell'ordine delle stanze.",
             names: "Solo in questa card. Le stanze non elencate usano il nome di Tado Heating Manager.",
           }[s.name]),
@@ -1438,11 +1458,17 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       return out;
     }
 
+    // Colonne dei blocchi: 2 o 3 (stringa dall'editor o numero dal YAML), altrimenti automatico.
+    _columns() {
+      const n = parseInt(this._config.columns, 10);
+      return n === 2 || n === 3 ? n : 0;
+    }
+
     set hass(hass) {
       this._hass = hass;
       if (!this._config) return;
       const rooms = this._rooms();
-      const sig = (this._config.layout || "row") + ":" + rooms.map((r) => r.climate).join("|") + ":" +
+      const sig = (this._config.layout || "row") + ":" + this._columns() + ":" + rooms.map((r) => r.climate).join("|") + ":" +
         JSON.stringify(this._names());
       if (sig !== this._sig) {
         this._sig = sig;
@@ -1457,6 +1483,8 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           :host { display: block; }
           .list { display: flex; flex-direction: column; gap: 8px; }
           .list.tile { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+          .list.tile.c2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .list.tile.c3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
           .list.tile ha-card.empty { grid-column: 1 / -1; }
           ha-card.empty { padding: 16px; color: var(--secondary-text-color); }
         </style>
@@ -1464,6 +1492,8 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       const list = this.shadowRoot.querySelector(".list");
       const tile = this._config.layout === "tile";
       list.classList.toggle("tile", tile);
+      const cols = tile ? this._columns() : 0;
+      if (cols) list.classList.add("c" + cols);
       this._cards = [];
       if (!rooms.length) {
         list.innerHTML = `<ha-card class="empty">Nessun termosifone: aggiungi le stanze in Tado Heating Manager.<br>${THM_EMPTY_BTN}</ha-card>`;

@@ -12,7 +12,7 @@ tools/bump_resource.py               aggiorna ?v= della risorsa Lovelace (instal
 
 Il file contiene sei card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
 `heating-planner-card` (HP_*), `heating-radiator-card` (HR_*), `heating-radiators-card` (una `heating-radiator-card`
-per stanza di `sensor.hp_all_rooms`; entrambe con `layout: tile` = blocchi come le tessere del riepilogo, `_buildTile`/`_updateTile`, griglia `columns: 4`), `heating-summary-card` (HS_*, riepilogo per la Home: tessere delle stanze,
+per stanza di `sensor.hp_all_rooms`; entrambe con `layout: tile` = blocchi come le tessere del riepilogo, `_buildTile`/`_updateTile`, griglia `columns: 4`; `heating-radiators-card` ha `columns: 2|3` per i blocchi, predefinito automatico), `heating-summary-card` (HS_*, riepilogo per la Home: tessere delle stanze,
 prossimo cambio, quota trovata come nella card della quota; al tocco `navigation_path`, predefinito `/tado-heating`), `heating-ac-card` (AC_*), `tado-quota-card` (TQ_*).
 Editor visuale: `static getConfigForm()` (schema `ha-form` disegnato da HA, nessun elemento editor) su tutte.
 `heating-radiator-card` usa `this._cfg` = config + valori presi dalla stanza con lo stesso climate

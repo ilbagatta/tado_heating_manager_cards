@@ -39,7 +39,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.10.1`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.11.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -91,6 +91,7 @@ blocco apre lo stesso popup della riga; la pressione lunga sui tasti apre i dett
 ```yaml
 type: custom:heating-radiators-card
 layout: tile                      # facoltativo: blocchi affiancati invece delle righe
+columns: 3                        # facoltativo, solo con layout: tile: blocchi per riga (2 o 3; predefinito: automatico)
 exclude:                          # facoltativo: stanze da non mostrare
   - climate.termo_bagno
 names:                            # facoltativo: nome mostrato solo in questa card
