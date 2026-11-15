@@ -10,8 +10,12 @@ hacs.json                            filename = tado-heating-manager-cards.js
 tools/deploy.sh, bump_resource.py    deploy manuale con aggiornamento automatico di ?v=
 ```
 
-Il file contiene quattro card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
-`heating-planner-card` (HP_*), `heating-radiator-card` (HR_*), `heating-ac-card` (AC_*), `tado-quota-card` (TQ_*).
+Il file contiene cinque card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
+`heating-planner-card` (HP_*), `heating-radiator-card` (HR_*), `heating-radiators-card` (una `heating-radiator-card`
+per stanza di `sensor.hp_all_rooms`), `heating-ac-card` (AC_*), `tado-quota-card` (TQ_*).
+Editor visuale: `static getConfigForm()` (schema `ha-form` disegnato da HA, nessun elemento editor) su tutte tranne
+`heating-ac-card`. `heating-radiator-card` usa `this._cfg` = config + valori presi dalla stanza con lo stesso climate
+(`name`, `thermometer`, `valve_temperature`, `fan`; l'offset da `offset_entity`), ricalcolata a ogni `hass`.
 La card della quota trova i sensori da `hass.entities` (platform `tado_heating_manager` + `translation_key`, cioe' le
 chiavi di `HUB_KEYS`), poi ripiega sui nomi storici `sensor.system_tado_offset_manager_*`; il grafico usa la
 `history-graph` di HA (`loadCardHelpers`). Prova veloce senza HA: Chrome headless con una pagina che carica il file e
@@ -25,7 +29,7 @@ passa un `hass` finto (`states` + `entities`), con `ha-card`/`ha-icon` finti def
 - Le card di riga usano `getGridOptions() { return { columns: "full" }; }` senza fissare `rows`.
 - Stile uguale tra termosifoni e climatizzatori (cerchi 38px, riga 68px, bordo colorato per modo, animazioni).
 - Contratto con l'integrazione (non cambiarlo senza cambiare anche `../tado_heating_manager`):
-  `sensor.hp_all_rooms` (attributo `rooms`: slug, name, climate, offset_entity...), `switch.hp_all_enabled`,
+  `sensor.hp_all_rooms` (attributo `rooms`: slug, name, climate, fan, offset_entity, thermometer, valve, valve_temperature), `switch.hp_all_enabled`,
   `switch.hp_<slug>_enabled`, `sensor.hp_<slug>_current`, `sensor.hp_<slug>_plan` (attributi `wd`/`we`),
   servizi `tado_heating_manager.set_slots` e `set_room_order`.
   Card della quota: sensori per `translation_key` (`tado_ce_tracked` con `by_type`, `tado_ce_untracked` con il dettaglio

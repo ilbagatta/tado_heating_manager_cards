@@ -1,8 +1,9 @@
 /* Tado Heating Manager Cards
  * Card Lovelace per l'integrazione Tado Heating Manager (custom_components/tado_heating_manager).
- * Un solo file con quattro card, senza dipendenze e senza build:
+ * Un solo file con cinque card, senza dipendenze e senza build:
  *   custom:heating-planner-card    programmi a fasce di tutte le stanze (Feriali / Weekend)
  *   custom:heating-radiator-card   riga di un termosifone
+ *   custom:heating-radiators-card  una riga per ogni termosifone di Tado Heating Manager
  *   custom:heating-ac-card         riga di un climatizzatore
  *   custom:tado-quota-card         quota API Tado (stato, indicatori, provenienza delle chiamate, grafico)
  * Ogni card e' racchiusa in un blocco { } cosi' le costanti non si scontrano.
@@ -10,7 +11,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.5.1";
+const THM_CARDS_VERSION = "2.6.0";
 console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#fff;background:#ff8a3d;font-weight:600", "color:#ff8a3d");
 
 // ===== heating-planner-card.js =====
@@ -50,6 +51,18 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
 
     getCardSize() {
       return 12;
+    }
+
+    static getStubConfig() {
+      return {};
+    }
+
+    static getConfigForm() {
+      return {
+        schema: [{ name: "title", selector: { text: {} } }],
+        computeLabel: (s) => (s.name === "title" ? "Titolo" : s.name),
+        computeHelper: (s) => (s.name === "title" ? "Vuoto: Riscaldamento." : undefined),
+      };
     }
 
     set hass(hass) {
@@ -389,6 +402,8 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
    *   type: custom:heating-radiator-card
    *   entity: climate.termo_soggiorno
    *   name: Soggiorno              # opzionale
+   * I campi opzionali lasciati vuoti si prendono dalla stanza di Tado Heating Manager con lo stesso climate
+   * (nome, termometro, temperatura della valvola, ventola, offset gestito). Configurabile anche dall'editor visuale.
    *   temp_termometro: sensor.xxx  # opzionale: temperatura ambiente (mostrata come T:)
    *   temp_valvola: sensor.zzz     # opzionale: temperatura della valvola (mostrata come V:)
    *   offset_prioritario: sensor.kkk # opzionale: offset mostrato con precedenza (se ha un valore numerico).
@@ -406,6 +421,25 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   const HR_BLUE = "#4f78a8";
   const HR_VALVE = "#ba68c8";
 
+  const HR_LABELS = {
+    entity: "Termostato (climate)",
+    name: "Nome",
+    temp_termometro: "Termometro della stanza",
+    temp_valvola: "Temperatura della valvola",
+    fan: "Ventola",
+    door: "Porta o finestra",
+    offset_prioritario: "Offset mostrato (prioritario)",
+    offset_sensor: "Offset di riserva",
+  };
+  const HR_HELPERS = {
+    name: "Vuoto: nome della stanza in Tado Heating Manager.",
+    temp_termometro: "Vuoto: il termometro configurato nella stanza.",
+    temp_valvola: "Vuoto: il sensore della valvola HomeKit della stanza.",
+    fan: "Vuoto: la ventola configurata nella stanza (se c'è).",
+    offset_prioritario: "Vuoto: l'offset gestito da Tado Heating Manager.",
+    offset_sensor: "Usato solo se il climate non ha l'attributo offset_celsius.",
+  };
+
   const hrEsc = (s) =>
     String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -419,8 +453,32 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     setConfig(config) {
       if (!config || !config.entity) throw new Error("Manca 'entity' (climate.*)");
       this._config = config;
+      this._cfg = this._effective();
       this._sig = "";
       this._build();
+    }
+
+    // Stanza di Tado Heating Manager con questo climate (attributo rooms di sensor.hp_all_rooms).
+    _room() {
+      const st = this._hass && this._hass.states["sensor.hp_all_rooms"];
+      const rooms = (st && st.attributes.rooms) || [];
+      return rooms.find((r) => r.climate === this._config.entity);
+    }
+
+    // Configurazione effettiva: i campi lasciati vuoti si prendono dalla stanza dell'integrazione.
+    _effective() {
+      const room = (this._hass && this._room()) || {};
+      const auto = {
+        name: room.name,
+        temp_termometro: room.thermometer,
+        temp_valvola: room.valve_temperature,
+        fan: room.fan,
+      };
+      const out = { ...this._config };
+      Object.keys(auto).forEach((k) => {
+        if (!out[k] && auto[k]) out[k] = auto[k];
+      });
+      return out;
     }
 
     getCardSize() {
@@ -432,12 +490,44 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     }
 
     static getStubConfig(hass) {
+      const st = hass.states["sensor.hp_all_rooms"];
+      const rooms = (st && st.attributes.rooms) || [];
+      if (rooms.length) return { entity: rooms[0].climate };
       const e = Object.keys(hass.states).find((k) => k.startsWith("climate."));
       return { entity: e || "climate.example" };
     }
 
+    // Editor visuale di HA (nessun elemento personalizzato: lo disegna HA dallo schema).
+    static getConfigForm() {
+      const sensor = { entity: { domain: "sensor" } };
+      return {
+        schema: [
+          { name: "entity", required: true, selector: { entity: { domain: "climate" } } },
+          { name: "name", selector: { text: {} } },
+          {
+            type: "expandable", name: "", title: "Altre entità (facoltative)", flatten: true,
+            schema: [
+              { name: "temp_termometro", selector: { entity: { domain: "sensor", device_class: "temperature" } } },
+              { name: "temp_valvola", selector: { entity: { domain: "sensor", device_class: "temperature" } } },
+              { name: "fan", selector: { entity: { domain: ["fan", "switch"] } } },
+              { name: "door", selector: { entity: { domain: ["binary_sensor", "input_boolean", "switch"] } } },
+              { name: "offset_prioritario", selector: sensor },
+              { name: "offset_sensor", selector: sensor },
+            ],
+          },
+        ],
+        computeLabel: (s) => HR_LABELS[s.name] || s.name,
+        computeHelper: (s) => HR_HELPERS[s.name],
+      };
+    }
+
     set hass(hass) {
       this._hass = hass;
+      const eff = this._effective();
+      if (JSON.stringify(eff) !== JSON.stringify(this._cfg)) {
+        this._cfg = eff;
+        this._sig = "";
+      }
       const sig = this._signature();
       if (sig === this._sig) return;
       this._sig = sig;
@@ -461,11 +551,11 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     }
 
     _offsetEntity() {
-      return this._config.offset_prioritario || this._autoOffset();
+      return this._cfg.offset_prioritario || this._autoOffset();
     }
 
     _signature() {
-      const c = this._config;
+      const c = this._cfg;
       const ids = [c.entity, c.temp_termometro, c.temp_valvola, this._offsetEntity(), c.offset_sensor, c.fan, c.door];
       return ids
         .map((id) => {
@@ -574,7 +664,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           t = setTimeout(() => {
             t = null;
             el._held = true;
-            const id = el.dataset.a === "fan" ? this._config.fan : this._config.entity;
+            const id = el.dataset.a === "fan" ? this._cfg.fan : this._cfg.entity;
             this._fire("more-info", id);
           }, 500);
         });
@@ -591,13 +681,13 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     }
 
     _action(a) {
-      const c = this._st(this._config.entity);
+      const c = this._st(this._cfg.entity);
       if (!c) return;
-      const id = this._config.entity;
+      const id = this._cfg.entity;
       if (a === "mode") {
         this._openModeMenu();
       } else if (a === "fan") {
-        this._hass.callService("homeassistant", "toggle", { entity_id: this._config.fan });
+        this._hass.callService("homeassistant", "toggle", { entity_id: this._cfg.fan });
       } else if (a === "minus" || a === "plus") {
         const base = Number(c.attributes.temperature ?? c.attributes.current_temperature ?? 20);
         const d = a === "plus" ? 0.5 : -0.5;
@@ -620,7 +710,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
 
     _openModeMenu() {
       if (this._menu) return this._closeModeMenu();
-      const c = this._st(this._config.entity);
+      const c = this._st(this._cfg.entity);
       if (!c) return;
       const modes = c.attributes.hvac_modes;
       const avail = modes ? HR_ORDER.filter((m) => modes.includes(m)) : HR_ORDER;
@@ -656,7 +746,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         const mode = t.dataset.m;
         this._closeModeMenu();
         if (mode !== c.state) {
-          this._hass.callService("climate", "set_hvac_mode", { entity_id: this._config.entity, hvac_mode: mode });
+          this._hass.callService("climate", "set_hvac_mode", { entity_id: this._cfg.entity, hvac_mode: mode });
         }
       });
       const away = (ev) => {
@@ -683,7 +773,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
 
     _update() {
       if (!this._el || !this._hass) return;
-      const cfg = this._config;
+      const cfg = this._cfg;
       const c = this._st(cfg.entity);
       const e = this._el;
       const fmt = (v) => (v === undefined || v === null || isNaN(Number(v)) ? "--" : Number(v).toFixed(1));
@@ -763,7 +853,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     // ---- popup (alternativa al more-info) ----
     _openDialog() {
       if (this._dlg || !this._hass) return;
-      const cfg = this._config;
+      const cfg = this._cfg;
       const host = document.createElement("div");
       const root = host.attachShadow({ mode: "open" });
       root.innerHTML = `
@@ -854,7 +944,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     async _dlgGraph() {
       const dlg = this._dlg;
       if (!dlg) return;
-      const cfg = this._config;
+      const cfg = this._cfg;
       const box = dlg.q(".graph");
       box.textContent = "Caricamento grafico...";
       const seq = (dlg.seq = (dlg.seq || 0) + 1);
@@ -993,7 +1083,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     _dlgUpdate() {
       const dlg = this._dlg;
       if (!dlg || !this._hass) return;
-      const cfg = this._config;
+      const cfg = this._cfg;
       const c = this._st(cfg.entity);
       const q = dlg.q;
       const fmt = (v) => (v === undefined || v === null || isNaN(Number(v)) ? "--" : Number(v).toFixed(1));
@@ -1037,6 +1127,101 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     type: "heating-radiator-card",
     name: "Heating Radiator",
     description: "Riga termosifone: modalità, ventola, temperatura target e stato.",
+  });
+}
+
+// ===== heating-radiators-card.js =====
+{
+  /* Heating Radiators card: una heating-radiator-card per ogni stanza di Tado Heating Manager, nell'ordine delle stanze.
+   * Uso:  type: custom:heating-radiators-card
+   *       exclude: [climate.xxx]   # opzionale: stanze da non mostrare
+   * Termometro, valvola, ventola e offset di ogni riga arrivano dalla stanza (vedi heating-radiator-card).
+   */
+  class HeatingRadiatorsCard extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+      this._sig = null;
+      this._cards = [];
+    }
+
+    setConfig(config) {
+      this._config = config || {};
+      this._sig = null;
+      if (this._hass) this.hass = this._hass;
+    }
+
+    getCardSize() {
+      return Math.max(1, this._cards.length);
+    }
+
+    getGridOptions() {
+      return { columns: "full" };
+    }
+
+    static getStubConfig() {
+      return {};
+    }
+
+    static getConfigForm() {
+      return {
+        schema: [{ name: "exclude", selector: { entity: { domain: "climate", multiple: true } } }],
+        computeLabel: (s) => (s.name === "exclude" ? "Stanze da non mostrare" : s.name),
+        computeHelper: (s) =>
+          s.name === "exclude" ? "Le altre stanze di Tado Heating Manager compaiono da sole, nell'ordine delle stanze." : undefined,
+      };
+    }
+
+    _rooms() {
+      const st = this._hass.states["sensor.hp_all_rooms"];
+      const rooms = (st && st.attributes.rooms) || [];
+      const skip = new Set(this._config.exclude || []);
+      return rooms.filter((r) => r.climate && !skip.has(r.climate));
+    }
+
+    set hass(hass) {
+      this._hass = hass;
+      if (!this._config) return;
+      const rooms = this._rooms();
+      const sig = rooms.map((r) => r.climate).join("|");
+      if (sig !== this._sig) {
+        this._sig = sig;
+        this._build(rooms);
+      }
+      this._cards.forEach((c) => (c.hass = hass));
+    }
+
+    _build(rooms) {
+      this.shadowRoot.innerHTML = `
+        <style>
+          :host { display: block; }
+          .list { display: flex; flex-direction: column; gap: 8px; }
+          ha-card.empty { padding: 16px; color: var(--secondary-text-color); }
+        </style>
+        <div class="list"></div>`;
+      const list = this.shadowRoot.querySelector(".list");
+      this._cards = [];
+      if (!rooms.length) {
+        list.innerHTML = `<ha-card class="empty">Nessun termosifone: aggiungi le stanze in Tado Heating Manager.</ha-card>`;
+        return;
+      }
+      rooms.forEach((r) => {
+        const card = document.createElement("heating-radiator-card");
+        card.setConfig({ entity: r.climate });
+        list.appendChild(card);
+        this._cards.push(card);
+      });
+    }
+  }
+
+  if (!customElements.get("heating-radiators-card")) {
+    customElements.define("heating-radiators-card", HeatingRadiatorsCard);
+  }
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: "heating-radiators-card",
+    name: "Heating Radiators",
+    description: "Una riga per ogni termosifone di Tado Heating Manager, aggiunta da sola.",
   });
 }
 
@@ -1363,6 +1548,17 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
 
     static getStubConfig() {
       return {};
+    }
+
+    static getConfigForm() {
+      return {
+        schema: [
+          { name: "title", selector: { text: {} } },
+          { name: "hours_to_show", selector: { number: { min: 0, max: 168, step: 1, mode: "box", unit_of_measurement: "h" } } },
+        ],
+        computeLabel: (s) => ({ title: "Titolo", hours_to_show: "Ore del grafico" }[s.name] || s.name),
+        computeHelper: (s) => (s.name === "hours_to_show" ? "0 = senza grafico." : undefined),
+      };
     }
 
     set hass(hass) {

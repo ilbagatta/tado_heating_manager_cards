@@ -13,6 +13,7 @@ e quella della quota richiedono l'integrazione Tado Heating Manager.
 |---|---|
 | `custom:heating-planner-card` | Programmi a fasce di tutte le stanze, tab Feriali / Weekend, ordine delle stanze |
 | `custom:heating-radiator-card` | Riga di un termosifone (modo, temperatura, offset, popup con grafico) |
+| `custom:heating-radiators-card` | Una riga di termosifone per ogni stanza di Tado Heating Manager, aggiunta da sola |
 | `custom:heating-ac-card` | Riga di un climatizzatore |
 | `custom:tado-quota-card` | Quota API Tado: stato, indicatori, provenienza delle chiamate, grafico |
 
@@ -37,7 +38,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.5.1`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.6.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -58,6 +59,9 @@ Nella console del browser compare `TADO-HEATING-MANAGER-CARDS <versione>`: serve
 
 ## Configurazione
 
+Tutte le card (tranne quella del climatizzatore) si configurano anche dall'**editor visuale** di Home Assistant
+(*Modifica dashboard → Aggiungi card → cerca "Heating" o "Tado"*), senza scrivere YAML.
+
 ```yaml
 type: custom:heating-planner-card
 title: Riscaldamento        # facoltativo
@@ -74,6 +78,18 @@ offset_sensor: sensor.yyy         # facoltativo
 fan: switch.ventola               # facoltativo
 door: binary_sensor.porta         # facoltativo
 ```
+
+Nome, termometro, temperatura della valvola, ventola e offset lasciati vuoti si prendono dalla stanza di Tado Heating
+Manager con lo stesso `entity` (la ventola si imposta nella stanza: *Impostazioni → Tado Heating Manager → stanza →
+Modifica*).
+
+```yaml
+type: custom:heating-radiators-card
+exclude:                          # facoltativo: stanze da non mostrare
+  - climate.termo_bagno
+```
+
+Una `heating-radiator-card` per ogni stanza, nell'ordine delle stanze: le stanze nuove compaiono da sole.
 
 ```yaml
 type: custom:heating-ac-card
