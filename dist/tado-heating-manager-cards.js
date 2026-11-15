@@ -12,7 +12,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.9.1";
+const THM_CARDS_VERSION = "2.9.2";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -644,6 +644,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
             display: grid; grid-template-columns: 32px 44px 32px; align-items: center; padding: 0 4px;
           }
           .temp .v { font-size: 14px; font-weight: 500; text-align: center; }
+          .temp .v.txt { font-size: 11.5px; font-weight: 400; color: var(--secondary-text-color); }
           .temp .s {
             width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
             cursor: pointer; --mdc-icon-size: 18px; border-radius: 50%;
@@ -753,6 +754,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
             display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px; align-items: center;
           }
           .temp .v { font-size: 15px; font-weight: 500; text-align: center; white-space: nowrap; }
+          .temp .v.txt { font-size: 13px; font-weight: 400; color: var(--secondary-text-color); }
           .temp .s {
             width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
             cursor: pointer; --mdc-icon-size: 18px; border-radius: 50%;
@@ -863,7 +865,9 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       e.valve.textContent = cfg.temp_valvola && !this._bad(vs) && !isNaN(Number(vs.state)) ? `V ${fmt(vs.state)}°` : "";
       const o = bad ? null : this._offsetNum(c);
       e.off.textContent = o === null ? "" : `Δ ${o > 0 ? "+" : ""}${o.toFixed(1)}°`;
-      e.value.textContent = bad ? "--" : fmt(c.attributes.temperature) === "--" ? "--" : `${fmt(c.attributes.temperature)}°`;
+      const isOff = !bad && c.state === "off";
+      e.value.classList.toggle("txt", isOff);
+      e.value.textContent = bad ? "--" : isOff ? "Spento" : fmt(c.attributes.temperature) === "--" ? "--" : `${fmt(c.attributes.temperature)}°`;
 
       if (cfg.fan) {
         const f = this._st(cfg.fan);
@@ -886,8 +890,16 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       } else if (a === "fan") {
         this._hass.callService("homeassistant", "toggle", { entity_id: this._cfg.fan });
       } else if (a === "minus" || a === "plus") {
-        const base = Number(c.attributes.temperature ?? c.attributes.current_temperature ?? 20);
         const d = a === "plus" ? 0.5 : -0.5;
+        if (c.state === "off") {
+          // da spento il target di Tado (5 °C) non conta: si riparte dalla temperatura della stanza e si accende
+          const ts = this._st(this._cfg.temp_termometro);
+          const room = !this._bad(ts) && !isNaN(Number(ts.state)) ? Number(ts.state) : Number(c.attributes.current_temperature ?? 20);
+          const t = Math.min(25, Math.max(5, Math.round(room * 2) / 2 + d));
+          this._hass.callService("climate", "set_temperature", { entity_id: id, temperature: t, hvac_mode: "heat" });
+          return;
+        }
+        const base = Number(c.attributes.temperature ?? c.attributes.current_temperature ?? 20);
         const t = Math.min(25, Math.max(5, Math.round((base + d) * 2) / 2));
         this._hass.callService("climate", "set_temperature", { entity_id: id, temperature: t });
       }
@@ -1043,7 +1055,9 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         e.fan.style.display = "none";
       }
 
-      e.value.textContent = !c || this._bad(c) ? "--" : fmt(c.attributes.temperature);
+      const isOff = !!c && c.state === "off";
+      e.value.classList.toggle("txt", isOff);
+      e.value.textContent = !c || this._bad(c) ? "--" : isOff ? "Spento" : fmt(c.attributes.temperature);
       this._dlgUpdate();
     }
 
@@ -1316,7 +1330,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         chips.push(`<div class="chip${ro ? " ro" : ""}${open ? " alert" : ""}" ${ro ? "" : `data-t="${hrEsc(cfg.door)}"`}><ha-icon icon="${open ? "mdi:door-open" : "mdi:door-closed"}"></ha-icon>${open ? "Porta aperta" : "Porta chiusa"}</div>`);
       }
       q(".chips").innerHTML = chips.join("");
-      q(".tset .v").textContent = !c || this._bad(c) ? "--" : fmt(c.attributes.temperature) + "°";
+      q(".tset .v").textContent = !c || this._bad(c) ? "--" : c.state === "off" ? "Spento" : fmt(c.attributes.temperature) + "°";
 
     }
   }
