@@ -12,9 +12,9 @@ e quella della quota richiedono l'integrazione Tado Heating Manager.
 | Card | Uso |
 |---|---|
 | `custom:heating-planner-card` | Programmi a fasce di tutte le stanze, tab Feriali / Weekend, ordine delle stanze |
-| `custom:heating-radiator-card` | Riga di un termosifone (modo, temperatura, offset, popup con grafico) |
+| `custom:heating-radiator-card` | Riga o blocco di un termosifone (modo, temperatura, valvola, offset, popup con grafico) |
 | `custom:heating-summary-card` | Riepilogo per la Home: termosifoni, prossimo cambio, quota; un tocco apre la plancia Riscaldamento |
-| `custom:heating-radiators-card` | Una riga di termosifone per ogni stanza di Tado Heating Manager, aggiunta da sola |
+| `custom:heating-radiators-card` | Una riga (o un blocco) di termosifone per ogni stanza di Tado Heating Manager, aggiunta da sola |
 | `custom:heating-ac-card` | Riga di un climatizzatore |
 | `custom:tado-quota-card` | Quota API Tado: stato, indicatori, provenienza delle chiamate, grafico |
 
@@ -39,7 +39,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.8.3`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.9.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -72,6 +72,7 @@ title: Riscaldamento        # facoltativo
 type: custom:heating-radiator-card
 entity: climate.termo_soggiorno   # obbligatorio
 name: Soggiorno                   # facoltativo
+layout: tile                      # facoltativo: blocco invece della riga
 temp_termometro: sensor.xxx       # facoltativo: temperatura ambiente (T:)
 temp_valvola: sensor.zzz          # facoltativo: temperatura della valvola (V:)
 offset_prioritario: sensor.kkk    # facoltativo: se manca, l'"Offset gestito" della stanza con questo termostato
@@ -84,8 +85,13 @@ Nome, termometro, temperatura della valvola, ventola e offset lasciati vuoti si 
 Manager con lo stesso `entity` (la ventola si imposta nella stanza: *Impostazioni → Tado Heating Manager → stanza →
 Modifica*).
 
+Con `layout: tile` (nell'editor: *Aspetto → Blocco*) la card diventa un blocco come quelli di `heating-summary-card`:
+nome, ventola (un tocco la accende/spegne), temperatura grande con quella della valvola (V), target e offset (Δ);
+nella vista a sezioni ne stanno tre per riga. Un tocco sul blocco apre lo stesso popup della riga.
+
 ```yaml
 type: custom:heating-radiators-card
+layout: tile                      # facoltativo: blocchi affiancati invece delle righe
 exclude:                          # facoltativo: stanze da non mostrare
   - climate.termo_bagno
 ```

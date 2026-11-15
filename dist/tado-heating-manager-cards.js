@@ -2,7 +2,7 @@
  * Card Lovelace per l'integrazione Tado Heating Manager (custom_components/tado_heating_manager).
  * Un solo file con sei card, senza dipendenze e senza build:
  *   custom:heating-planner-card    programmi a fasce di tutte le stanze (Feriali / Weekend)
- *   custom:heating-radiator-card   riga di un termosifone
+ *   custom:heating-radiator-card   riga (o blocco, layout: tile) di un termosifone
  *   custom:heating-radiators-card  una riga per ogni termosifone di Tado Heating Manager
  *   custom:heating-summary-card    riepilogo per la Home (termosifoni, programmi, quota); al tocco apre la plancia
  *   custom:heating-ac-card         riga di un climatizzatore
@@ -12,7 +12,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.8.3";
+const THM_CARDS_VERSION = "2.9.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -419,6 +419,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
    *   type: custom:heating-radiator-card
    *   entity: climate.termo_soggiorno
    *   name: Soggiorno              # opzionale
+   *   layout: tile                 # opzionale: blocco come nel riepilogo (predefinito: riga)
    * I campi opzionali lasciati vuoti si prendono dalla stanza di Tado Heating Manager con lo stesso climate
    * (nome, termometro, temperatura della valvola, ventola, offset gestito). Configurabile anche dall'editor visuale.
    *   temp_termometro: sensor.xxx  # opzionale: temperatura ambiente (mostrata come T:)
@@ -441,6 +442,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   const HR_LABELS = {
     entity: "Termostato (climate)",
     name: "Nome",
+    layout: "Aspetto",
     temp_termometro: "Termometro della stanza",
     temp_valvola: "Temperatura della valvola",
     fan: "Ventola",
@@ -450,12 +452,18 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   };
   const HR_HELPERS = {
     name: "Vuoto: nome della stanza in Tado Heating Manager.",
+    layout: "Blocco: temperatura grande, valvola e offset; tre per riga.",
     temp_termometro: "Vuoto: il termometro configurato nella stanza.",
     temp_valvola: "Vuoto: il sensore della valvola HomeKit della stanza.",
     fan: "Vuoto: la ventola configurata nella stanza (se c'è).",
     offset_prioritario: "Vuoto: l'offset gestito da Tado Heating Manager.",
     offset_sensor: "Usato solo se il climate non ha l'attributo offset_celsius.",
   };
+
+  const HR_LAYOUT_SELECTOR = {
+    select: { mode: "dropdown", options: [{ value: "row", label: "Riga" }, { value: "tile", label: "Blocco" }] },
+  };
+  window.THM_HR_LAYOUT_SELECTOR = HR_LAYOUT_SELECTOR;
 
   const hrEsc = (s) =>
     String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -498,12 +506,16 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       return out;
     }
 
+    _isTile() {
+      return !!this._config && this._config.layout === "tile";
+    }
+
     getCardSize() {
-      return 1;
+      return this._isTile() ? 2 : 1;
     }
 
     getGridOptions() {
-      return { columns: "full" };
+      return this._isTile() ? { columns: 4, min_columns: 3 } : { columns: "full" };
     }
 
     static getStubConfig(hass) {
@@ -521,6 +533,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         schema: [
           { name: "entity", required: true, selector: { entity: { domain: "climate" } } },
           { name: "name", selector: { text: {} } },
+          { name: "layout", selector: HR_LAYOUT_SELECTOR },
           {
             type: "expandable", name: "", title: "Altre entità (facoltative)", flatten: true,
             schema: [
@@ -589,6 +602,8 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     }
 
     _build() {
+      this._closeModeMenu();
+      if (this._isTile()) return this._buildTile();
       this.shadowRoot.innerHTML = `
         <style>
           :host { display: block; }
@@ -670,6 +685,11 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
 
       this._closeDialog();
       this._card.addEventListener("click", () => this._openDialog());
+      this._bindButtons();
+    }
+
+    // pulsanti [data-a]: tocco = azione, pressione lunga = dettagli
+    _bindButtons() {
       this.shadowRoot.querySelectorAll("[data-a]").forEach((el) => {
         el.addEventListener("click", (ev) => {
           ev.stopPropagation();
@@ -695,6 +715,146 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           }
         }, true);
       });
+    }
+
+    // ---- blocco (layout: tile), stesso aspetto delle tessere di heating-summary-card ----
+    _buildTile() {
+      this.shadowRoot.innerHTML = `
+        <style>
+          :host { display: block; height: 100%; }
+          ha-card {
+            box-sizing: border-box; height: 100%; min-height: 92px; padding: 10px 12px; border-radius: var(--ha-card-border-radius, 14px);
+            box-shadow: none; overflow: hidden; cursor: pointer; color: var(--primary-text-color);
+            border: 2px solid transparent; transition: border-color .4s ease, background .4s ease;
+            display: flex; flex-direction: column; justify-content: space-between;
+          }
+          ha-card.heat { border-color: rgba(255,138,61,.4); }
+          ha-card.heating { background-image: linear-gradient(rgba(255,122,40,.18), rgba(255,122,40,.18)); border-color: rgba(255,138,61,.65); }
+          ha-card.auto { border-color: rgba(76,175,80,.6); }
+          ha-card.off .body { opacity: .72; }
+          .rtop { display: flex; align-items: center; gap: 4px; min-height: 26px; }
+          .rname { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .rflame { --mdc-icon-size: 18px; color: ${HR_ORANGE}; display: none; transform-origin: 50% 90%; }
+          ha-card.heating .rflame { display: inline-flex; animation: fiamma-flicker .9s ease-in-out infinite; }
+          .rfan {
+            width: 26px; height: 26px; margin-right: -4px; border-radius: 50%; flex: none; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; --mdc-icon-size: 18px; color: var(--disabled-text-color, #9e9e9e);
+          }
+          .rfan:hover { background: rgba(128,128,128,.18); }
+          .rfan.on { color: #29b6f6; }
+          .rfan.on ha-icon { animation: ventola-spin 1.2s linear infinite; }
+          .rfan ha-icon { display: inline-flex; transform-origin: 50% 50%; }
+          .rtemp { font-size: 26px; font-weight: 400; margin-top: 4px; line-height: 1.1; white-space: nowrap; }
+          .rv { font-size: 12px; color: ${HR_VALVE}; margin-left: 6px; font-weight: 500; vertical-align: 3px; }
+          .rv:empty { display: none; }
+          .rsub { font-size: 12.5px; color: var(--secondary-text-color); margin-top: 3px; white-space: nowrap; display: flex; justify-content: space-between; gap: 6px; }
+          ha-card.heating .st { color: ${HR_ORANGE}; }
+          ha-card.auto .st { color: ${HR_GREEN}; }
+          .roff { flex: none; font-variant-numeric: tabular-nums; }
+          ha-card { container-type: inline-size; }
+          @container (max-width: 135px) {
+            .rname { font-size: 13px; }
+            .rtemp { font-size: 21px; }
+            .rv { font-size: 10.5px; margin-left: 3px; vertical-align: 2px; }
+            .rsub { font-size: 11.5px; }
+          }
+          @keyframes fiamma-flicker {
+            0%, 100% { transform: scale(1, 1) rotate(0deg); }
+            25% { transform: scale(1.06, .94) rotate(-3deg); }
+            50% { transform: scale(.95, 1.07) rotate(2deg); }
+            75% { transform: scale(1.04, .97) rotate(-2deg); }
+          }
+          @keyframes ventola-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+          @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+        </style>
+        <ha-card tabindex="0" role="button">
+          <div class="rtop"><div class="rname"></div><div class="rfan" data-a="fan"><ha-icon icon="mdi:fan"></ha-icon></div><ha-icon class="rflame" icon="mdi:fire"></ha-icon></div>
+          <div class="body">
+            <div class="rtemp"><span class="t"></span><span class="rv" title="Temperatura della valvola"></span></div>
+            <div class="rsub"><span class="st"></span><span class="roff" title="Offset della valvola"></span></div>
+          </div>
+        </ha-card>`;
+      const $ = (q) => this.shadowRoot.querySelector(q);
+      this._card = $("ha-card");
+      this._el = {
+        tile: true,
+        name: $(".rname"),
+        fan: $(".rfan"),
+        fanIcon: $(".rfan ha-icon"),
+        temp: $(".rtemp .t"),
+        valve: $(".rv"),
+        state: $(".st"),
+        off: $(".roff"),
+      };
+      this._closeDialog();
+      this._card.addEventListener("click", () => this._openDialog());
+      this._card.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          this._openDialog();
+        }
+      });
+      this._bindButtons();
+    }
+
+    // offset mostrato: entita' prioritaria / gestita, poi attributo offset_celsius, poi offset_sensor
+    _offsetNum(c) {
+      let ov;
+      const prio = this._offsetEntity();
+      if (prio) {
+        const p = this._st(prio);
+        if (!this._bad(p) && p.state !== "" && !isNaN(Number(p.state))) ov = p.state;
+      }
+      if (ov === undefined && c) ov = c.attributes.offset_celsius;
+      if ((ov === undefined || ov === null) && this._cfg.offset_sensor) {
+        const o = this._st(this._cfg.offset_sensor);
+        if (!this._bad(o)) ov = o.state;
+      }
+      return ov === undefined || ov === null || ov === "" || isNaN(Number(ov)) ? null : Number(ov);
+    }
+
+    _updateTile() {
+      const cfg = this._cfg;
+      const c = this._st(cfg.entity);
+      const e = this._el;
+      const fmt = (v) => (v === undefined || v === null || v === "" || isNaN(Number(v)) ? "--" : Number(v).toFixed(1));
+      const bad = this._bad(c);
+      const off = bad || c.state === "off";
+      const heating = !off && c.attributes.hvac_action === "heating";
+      const cls = [off ? "off" : "on"];
+      if (heating) cls.push("heating");
+      if (!off && c.state === "auto") cls.push("auto");
+      else if (!off && c.state === "heat") cls.push("heat");
+      this._card.className = cls.join(" ");
+
+      e.name.textContent = cfg.name || (c && c.attributes.friendly_name) || cfg.entity;
+      const ts = this._st(cfg.temp_termometro);
+      const temp = !this._bad(ts) && !isNaN(Number(ts.state)) ? ts.state : c && c.attributes.current_temperature;
+      e.temp.textContent = `${fmt(temp)}°`;
+      const vs = this._st(cfg.temp_valvola);
+      e.valve.textContent = cfg.temp_valvola && !this._bad(vs) && !isNaN(Number(vs.state)) ? `V ${fmt(vs.state)}°` : "";
+      e.state.textContent = !c
+        ? "non trovato"
+        : bad
+          ? "n.d."
+          : off
+            ? "spento"
+            : c.attributes.temperature != null
+              ? `→ ${fmt(c.attributes.temperature)}°`
+              : "acceso";
+      const o = bad ? null : this._offsetNum(c);
+      e.off.textContent = o === null ? "" : `Δ ${o > 0 ? "+" : ""}${o.toFixed(1)}°`;
+
+      if (cfg.fan) {
+        const f = this._st(cfg.fan);
+        const fb = this._bad(f);
+        e.fan.style.display = "";
+        e.fanIcon.setAttribute("icon", fb ? "mdi:fan-off" : "mdi:fan");
+        e.fan.classList.toggle("on", !fb && f.state === "on");
+        e.fan.title = `Ventola ${fb ? "non disponibile" : f.state === "on" ? "accesa" : "spenta"}`;
+      } else {
+        e.fan.style.display = "none";
+      }
     }
 
     _action(a) {
@@ -790,6 +950,11 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
 
     _update() {
       if (!this._el || !this._hass) return;
+      if (this._el.tile) {
+        this._updateTile();
+        this._dlgUpdate();
+        return;
+      }
       const cfg = this._cfg;
       const c = this._st(cfg.entity);
       const e = this._el;
@@ -1143,7 +1308,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   window.customCards.push({
     type: "heating-radiator-card",
     name: "Heating Radiator",
-    description: "Riga termosifone: modalità, ventola, temperatura target e stato.",
+    description: "Termosifone a riga o a blocco: modalità, ventola, temperatura target, valvola e offset.",
   });
 }
 
@@ -1152,6 +1317,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   /* Heating Radiators card: una heating-radiator-card per ogni stanza di Tado Heating Manager, nell'ordine delle stanze.
    * Uso:  type: custom:heating-radiators-card
    *       exclude: [climate.xxx]   # opzionale: stanze da non mostrare
+   *       layout: tile             # opzionale: blocchi affiancati invece delle righe
    * Termometro, valvola, ventola e offset di ogni riga arrivano dalla stanza (vedi heating-radiator-card).
    */
   class HeatingRadiatorsCard extends HTMLElement {
@@ -1182,8 +1348,11 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
 
     static getConfigForm() {
       return {
-        schema: [{ name: "exclude", selector: { entity: { domain: "climate", multiple: true } } }],
-        computeLabel: (s) => (s.name === "exclude" ? "Stanze da non mostrare" : s.name),
+        schema: [
+          { name: "layout", selector: window.THM_HR_LAYOUT_SELECTOR },
+          { name: "exclude", selector: { entity: { domain: "climate", multiple: true } } },
+        ],
+        computeLabel: (s) => ({ exclude: "Stanze da non mostrare", layout: "Aspetto" }[s.name] || s.name),
         computeHelper: (s) =>
           s.name === "exclude" ? "Le altre stanze di Tado Heating Manager compaiono da sole, nell'ordine delle stanze." : undefined,
       };
@@ -1200,7 +1369,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       this._hass = hass;
       if (!this._config) return;
       const rooms = this._rooms();
-      const sig = rooms.map((r) => r.climate).join("|");
+      const sig = (this._config.layout || "row") + ":" + rooms.map((r) => r.climate).join("|");
       if (sig !== this._sig) {
         this._sig = sig;
         this._build(rooms);
@@ -1213,10 +1382,14 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         <style>
           :host { display: block; }
           .list { display: flex; flex-direction: column; gap: 8px; }
+          .list.tile { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+          .list.tile ha-card.empty { grid-column: 1 / -1; }
           ha-card.empty { padding: 16px; color: var(--secondary-text-color); }
         </style>
         <div class="list"></div>`;
       const list = this.shadowRoot.querySelector(".list");
+      const tile = this._config.layout === "tile";
+      list.classList.toggle("tile", tile);
       this._cards = [];
       if (!rooms.length) {
         list.innerHTML = `<ha-card class="empty">Nessun termosifone: aggiungi le stanze in Tado Heating Manager.<br>${THM_EMPTY_BTN}</ha-card>`;
@@ -1225,7 +1398,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       }
       rooms.forEach((r) => {
         const card = document.createElement("heating-radiator-card");
-        card.setConfig({ entity: r.climate });
+        card.setConfig(tile ? { entity: r.climate, layout: "tile" } : { entity: r.climate });
         list.appendChild(card);
         this._cards.push(card);
       });
