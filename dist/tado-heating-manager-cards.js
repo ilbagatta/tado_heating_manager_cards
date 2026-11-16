@@ -652,7 +652,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
             border: 2px solid transparent;
           }
           ha-card.noFan { grid-template-columns: 44px minmax(0, 1fr) auto auto; }
-          ha-card.heating { background-image: linear-gradient(rgba(255,122,40,.24), rgba(255,122,40,.24)); }
+          ha-card.heating { background-image: radial-gradient(120% 100% at 50% 100%, rgba(255,122,40,.38), rgba(255,122,40,0) 70%); }
           ha-card.auto { border-color: ${HR_GREEN}; }
           ha-card.hot { border-color: ${HR_ORANGE}; }
           ha-card.heat { border-color: rgba(255,138,61,.45); }
@@ -768,7 +768,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           }
           ha-card.heat { border-color: rgba(255,138,61,.45); }
           ha-card.hot { border-color: ${HR_ORANGE}; }
-          ha-card.heating { background-image: linear-gradient(rgba(255,122,40,.18), rgba(255,122,40,.18)); }
+          ha-card.heating { background-image: radial-gradient(120% 100% at 50% 100%, rgba(255,122,40,.38), rgba(255,122,40,0) 70%); }
           ha-card.auto { border-color: ${HR_GREEN}; }
           ha-card.off .mid, ha-card.off .roff { opacity: .72; }
           .top { display: flex; align-items: center; gap: 4px; min-height: 32px; }
@@ -2450,7 +2450,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       // bordo: colore pieno quando lavora (con sfondo colorato), attenuato quando la modalita' e' attiva ma e' fermo
       this._card.classList.toggle("off", bad || isOff);
       this._card.style.borderColor = ac || (mc ? acRgba(mc, 0.45) : "transparent");
-      this._card.style.backgroundImage = ac ? `linear-gradient(${acRgba(ac, tint)}, ${acRgba(ac, tint)})` : "";
+      this._card.style.backgroundImage = ac ? `radial-gradient(120% 100% at 50% 100%, ${acRgba(ac, 0.38)}, ${acRgba(ac, 0)} 70%)` : "";
       if (e.iconWrap) e.iconWrap.style.color = mc || "var(--primary-text-color)";
       this.shadowRoot.querySelectorAll(".temp .s").forEach((x) => (x.style.color = mc || AC_BLUE));
 
