@@ -17,7 +17,7 @@ e quella della quota richiedono l'integrazione Tado Heating Manager.
 | `custom:heating-radiators-card` | Una riga (o un blocco) di termosifone per ogni stanza di Tado Heating Manager, aggiunta da sola |
 | `custom:heating-ac-card` | Riga o blocco di un climatizzatore (modo, oscillazione, velocità, temperatura, popup con grafico) |
 | `custom:heating-acs-card` | Una riga (o un blocco) per ogni climatizzatore, trovati da soli o scelti a mano |
-| `custom:tado-quota-card` | Quota API Tado: stato, indicatori, provenienza delle chiamate, grafico |
+| `custom:tado-quota-card` | Quota API Tado: stato, indicatori, provenienza delle chiamate, voci espandibili |
 
 Le card sono separate dall'integrazione: dopo una modifica basta **ricaricare la dashboard**, senza riavviare Home Assistant.
 
@@ -40,7 +40,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.13.0`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.14.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)

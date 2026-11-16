@@ -25,8 +25,7 @@ Editor visuale: `static getConfigForm()` (schema `ha-form` disegnato da HA, ness
 Senza stanze: pulsante "Aggiungi le stanze" (`thmOpenConfig`, `pushState` + `location-changed`) nel planner e in
 `heating-radiators-card`; planner senza fasce in nessuna stanza: si apre su "Tutti (modifica)".
 La card della quota trova i sensori da `hass.entities` (platform `tado_heating_manager` + `translation_key`, cioe' le
-chiavi di `HUB_KEYS`), poi ripiega sui nomi storici `sensor.system_tado_offset_manager_*`; il grafico usa la
-`history-graph` di HA (`loadCardHelpers`). Prova veloce senza HA: Chrome headless con una pagina che carica il file e
+chiavi di `HUB_KEYS`), poi ripiega sui nomi storici `sensor.system_tado_offset_manager_*`; le sottovoci delle fonti (Tado CE, controlli extra) sono chiudibili (freccia, stato in `_open`); la barra "Utilizzo chiamate" sta in fondo, grafico storico tolto nella 2.14.0. Prova veloce senza HA: Chrome headless con una pagina che carica il file e
 passa un `hass` finto (`states` + `entities`), con `ha-card`/`ha-icon` finti definiti prima e un contenitore largo
 358 px per simulare lo smartphone (la finestra headless non scende sotto ~500 px).
 

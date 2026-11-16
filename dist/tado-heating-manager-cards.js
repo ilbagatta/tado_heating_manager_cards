@@ -7,13 +7,13 @@
  *   custom:heating-summary-card    riepilogo per la Home (termosifoni, programmi, quota); al tocco apre la plancia
  *   custom:heating-ac-card         riga (o blocco, layout: tile) di un climatizzatore
  *   custom:heating-acs-card        una riga (o un blocco) per ogni climatizzatore, trovati da soli
- *   custom:tado-quota-card         quota API Tado (stato, indicatori, provenienza delle chiamate, grafico)
+ *   custom:tado-quota-card         quota API Tado (stato, indicatori, provenienza delle chiamate, voci espandibili)
  * Ogni card e' racchiusa in un blocco { } cosi' le costanti non si scontrano.
  *
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.13.0";
+const THM_CARDS_VERSION = "2.14.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -3039,11 +3039,10 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
 
 // ===== tado-quota-card.js =====
 {
-  /* Quota API Tado: stato, indicatori, dettaglio delle chiamate e grafico.
+  /* Quota API Tado: stato, indicatori, dettaglio delle chiamate e utilizzo.
    * Uso:  type: custom:tado-quota-card
    * Opzioni (tutte facoltative):
    *   title: "Quota API Tado"
-   *   hours_to_show: 48        ore del grafico (0 = niente grafico)
    *   entities:                 entity_id da usare al posto di quelli trovati in automatico
    *     quota_status: sensor.xxx
    * Le entita' si trovano da sole (piattaforma tado_heating_manager + chiave), quindi la card funziona
@@ -3104,16 +3103,15 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     }
 
     setConfig(config) {
-      this._config = { title: "Quota API Tado", hours_to_show: 48, ...(config || {}) };
+      this._config = { title: "Quota API Tado", ...(config || {}) };
       this._sig = "";
       this._ids = null;
-      this._graph = null;
-      this._graphPending = false;
+      this._open = this._open || new Set();
       this._build();
     }
 
     getCardSize() {
-      return this._config && Number(this._config.hours_to_show) > 0 ? 9 : 6;
+      return 7;
     }
 
     getGridOptions() {
@@ -3128,10 +3126,8 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       return {
         schema: [
           { name: "title", selector: { text: {} } },
-          { name: "hours_to_show", selector: { number: { min: 0, max: 168, step: 1, mode: "box", unit_of_measurement: "h" } } },
         ],
-        computeLabel: (s) => ({ title: "Titolo", hours_to_show: "Ore del grafico" }[s.name] || s.name),
-        computeHelper: (s) => (s.name === "hours_to_show" ? "0 = senza grafico." : undefined),
+        computeLabel: (s) => ({ title: "Titolo" }[s.name] || s.name),
       };
     }
 
@@ -3139,8 +3135,6 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       this._hass = hass;
       // il registro puo' arrivare dopo il primo hass: finche' manca si riprova
       if (!this._ids || !this._idsFromReg) this._ids = this._resolve();
-      if (this._graph) this._graph.hass = hass;
-      else this._makeGraph();
       const sig = Object.values(this._ids)
         .map((id) => {
           const s = hass.states[id];
@@ -3179,28 +3173,6 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId: id }, bubbles: true, composed: true }));
     }
 
-    async _makeGraph() {
-      const hours = Number(this._config.hours_to_show);
-      if (!(hours > 0) || this._graphPending || !this._hass || !window.loadCardHelpers) return;
-      this._graphPending = true;
-      try {
-        const helpers = await window.loadCardHelpers();
-        const card = helpers.createCardElement({
-          type: "history-graph",
-          hours_to_show: hours,
-          entities: [
-            { entity: this._ids.quota_used, name: "Usate" },
-            { entity: this._ids.quota_remaining, name: "Residue" },
-          ],
-        });
-        card.hass = this._hass;
-        this._graph = card;
-        this._e.graph.replaceChildren(card);
-      } catch (err) {
-        this._e.graph.textContent = "Grafico non disponibile";
-      }
-    }
-
     _build() {
       this.shadowRoot.innerHTML = `
         <style>
@@ -3232,8 +3204,10 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .bar span { height: 100%; }
           .legend { display:flex; flex-wrap:wrap; gap: 4px 14px; font-size: .85em; color: var(--secondary-text-color); margin: 0 2px; }
           .legend i { display:inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
-          .graph { margin: 14px -16px -16px; }
-          .graph:empty { display:none; }
+          .chev { --mdc-icon-size: 20px; flex: none; cursor: pointer; transition: transform .15s; color: var(--secondary-text-color); padding: 2px; }
+          .chev.open { transform: rotate(90deg); }
+          .subs { display: none; }
+          .subs.open { display: block; }
         </style>
         <ha-card>
           <div class="head"><div class="title"></div><div class="badge"></div></div>
@@ -3246,18 +3220,29 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           <div class="sec">Dettaglio</div>
           <div class="detail"></div>
           <div class="sec srcsec">Chi ha usato le chiamate</div>
+          <div class="sources"></div>
+          <div class="sec">Utilizzo chiamate</div>
           <div class="bar"></div>
           <div class="legend"></div>
-          <div class="sources"></div>
-          <div class="graph"></div>
         </ha-card>`;
       const $ = (s) => this.shadowRoot.querySelector(s);
       this._e = {
         title: $(".title"), badge: $(".badge"), dot: $(".dot"), mtxt: $(".mtxt"), reset: $(".reset"),
         g1: $(".g1"), g2: $(".g2"), v1: $(".v1"), v2: $(".v2"),
-        detail: $(".detail"), srcsec: $(".srcsec"), bar: $(".bar"), legend: $(".legend"), sources: $(".sources"), graph: $(".graph"),
+        detail: $(".detail"), srcsec: $(".srcsec"), bar: $(".bar"), legend: $(".legend"), sources: $(".sources"),
       };
       this.shadowRoot.addEventListener("click", (ev) => {
+        const ch = ev.target.closest("[data-tg]");
+        if (ch) {
+          const k = ch.dataset.tg;
+          if (this._open.has(k)) this._open.delete(k);
+          else this._open.add(k);
+          const on = this._open.has(k);
+          ch.classList.toggle("open", on);
+          const box = this.shadowRoot.querySelector(`.subs[data-g="${k}"]`);
+          if (box) box.classList.toggle("open", on);
+          return;
+        }
         const el = ev.target.closest("[data-k]");
         if (el) this._more(el.dataset.k);
       });
@@ -3291,9 +3276,19 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       return `<svg viewBox="0 0 100 56">${paths}${needle}</svg>`;
     }
 
-    _row(key, icon, name, value, sub) {
+    _row(key, icon, name, value, sub, toggle) {
+      const chev = toggle
+        ? `<ha-icon class="chev${this._open.has(toggle) ? " open" : ""}" data-tg="${toggle}" icon="mdi:chevron-right"></ha-icon>`
+        : "";
       return `<div class="row${sub ? " sub" : ""}" data-k="${key}"><ha-icon icon="${icon}"></ha-icon>` +
-        `<span class="n">${tqEsc(name)}</span><span class="x">${tqEsc(value)}</span></div>`;
+        `<span class="n">${tqEsc(name)}</span><span class="x">${tqEsc(value)}</span>${chev}</div>`;
+    }
+
+    // blocco chiudibile: riga madre (con freccia) + note + sottovoci nascoste finche' non si apre
+    _group(g, key, icon, name, value, noteHtml, subs) {
+      if (!subs) return this._row(key, icon, name, value) + noteHtml;
+      return this._row(key, icon, name, value, false, g) + noteHtml +
+        `<div class="subs${this._open.has(g) ? " open" : ""}" data-g="${g}">${subs}</div>`;
     }
 
     _update() {
@@ -3364,21 +3359,24 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       e.legend.innerHTML = parts.map((p) => `<span><i style="background:${p.color}"></i>${tqEsc(p.label)} ${p.v}</span>`).join("");
 
       const note = (t) => `<div class="note">${tqEsc(t)}</div>`;
-      let src = this._row("tado_ce_tracked", "mdi:home-thermometer", "Tado CE", fmt(ce)) +
-        note("Tado CE legge e comanda le valvole dal cloud. Queste le conta da solo.");
+      let src = "";
+      let subs = "";
       const known = new Set(TQ_TRACKED_TYPES.map((t) => t[0]));
       const byType = ca.by_type || {};
       [...TQ_TRACKED_TYPES, ...Object.keys(byType).filter((k) => !known.has(k)).map((k) => [k, "mdi:api", k])]
         .forEach(([a, icon, label]) => {
           const v = byType[a] ?? ca[a];
-          if (v) src += this._row("tado_ce_tracked", icon, label, String(v), true);
+          if (v) subs += this._row("tado_ce_tracked", icon, label, String(v), true);
         });
+      src += this._group("ce", "tado_ce_tracked", "mdi:home-thermometer", "Tado CE", fmt(ce),
+        note("Tado CE legge e comanda le valvole dal cloud. Queste le conta da solo."), subs);
       if (ok(hid)) {
-        src += this._row("tado_ce_untracked", "mdi:eye-off-outline", "Tado CE, controlli extra", fmt(hid)) +
-          note("Le fa sempre Tado CE, ma non le segna nel suo contatore: le calcoliamo dai suoi aggiornamenti (stima).");
+        let hs = "";
         TQ_UNTRACKED_TYPES.forEach(([a, icon, label]) => {
-          if (n(ha[a])) src += this._row("tado_ce_untracked", icon, label, String(ha[a]), true);
+          if (n(ha[a])) hs += this._row("tado_ce_untracked", icon, label, String(ha[a]), true);
         });
+        src += this._group("hid", "tado_ce_untracked", "mdi:eye-off-outline", "Tado CE, controlli extra", fmt(hid),
+          note("Le fa sempre Tado CE, ma non le segna nel suo contatore: le calcoliamo dai suoi aggiornamenti (stima)."), hs);
       }
       src += this._row("api_calls_today", "mdi:thermometer-auto", "Offset automatico", own ? String(ownN) : "--") +
         note("Letture e scritture dell'offset fatte da Tado Heating Manager.");
@@ -3402,7 +3400,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   window.customCards.push({
     type: "tado-quota-card",
     name: "Tado Quota",
-    description: "Quota API Tado: stato, indicatori, provenienza delle chiamate e grafico.",
+    description: "Quota API Tado: stato, indicatori, provenienza delle chiamate (voci espandibili) e utilizzo.",
   });
 }
 
