@@ -10,7 +10,7 @@ hacs.json                            filename = tado-heating-manager-cards.js
 tools/bump_resource.py               aggiorna ?v= della risorsa Lovelace (installazione manuale)
 ```
 
-Il file contiene sette card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
+Il file contiene otto card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
 `heating-planner-card` (HP_*), `heating-radiator-card` (HR_*), `heating-radiators-card` (una `heating-radiator-card`
 per stanza di `sensor.hp_all_rooms`; entrambe con `layout: tile` = blocchi come le tessere del riepilogo, `_buildTile`/`_updateTile`, griglia `columns: 4`; `heating-radiators-card` ha `columns: 2|3` per i blocchi, predefinito automatico), `heating-summary-card` (HS_*, riepilogo per la Home: tessere delle stanze,
 prossimo cambio, quota trovata come nella card della quota; al tocco `navigation_path`, predefinito `/tado-heating`), `heating-ac-card` (AC_*), `heating-acs-card` (una `heating-ac-card` per climatizzatore: `entities` o, se vuoto, i climate con
@@ -58,8 +58,17 @@ Le installazioni dell'utente usano le card da **HACS**: si aggiornano solo con u
 `ssh root@<host> python3 - <versione> < tools/bump_resource.py`; chiedi conferma prima di scrivere) porta la risorsa
 Lovelace a `?v=<versione>` (la crea se manca).
 
+## heating-usage-card (2.15.0)
+
+Ore per stanza (stanze da `sensor.hp_all_rooms`) calcolate dallo storico: `history/history_during_period` sul climate,
+stato contato = `hvac_action` o lo stato (heating/idle/off; il resto non conta). Una richiesta per ogni giorno chiuso
+mancante (condivisa fra le card, `HU_INFLIGHT`), totali in secondi nella cache `localStorage` `thm-usage-v1`
+(`climate|AAAA-MM-GG`, tenuti 40 giorni); oggi riletto ogni 5 minuti e allungato con lo stato attuale; ridisegno ogni minuto.
+Giorni = mezzanotte locale del browser. Sostituisce la scheda markdown basata sul package `termosifoni_ore_stato.yaml`
+dell'utente e, per ora, l'idea del sensore delle ore nell'integrazione (vedi sotto).
+
 ## Card rimandate
 
 `heating-hours-card` (ore dei termosifoni oggi/7/30 giorni, pensata per lo smartphone) e' stata pubblicata in 2.2.0 e
-tolta in 2.3.0: tornera' quando Tado Heating Manager avra' i sensori delle ore (versione 1.1.0). Il codice e' nel commit
+tolta in 2.3.0 (leggeva i sensori `*_riepilogo_ore` del package); sostituita da `heating-usage-card` (2.15.0), che non ha bisogno di sensori. Il codice e' nel commit
 0c474ea (`git show 0c474ea:dist/tado-heating-manager-cards.js`, blocco `heating-hours-card.js`).

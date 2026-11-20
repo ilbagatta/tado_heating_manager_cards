@@ -17,6 +17,7 @@ e quella della quota richiedono l'integrazione Tado Heating Manager.
 | `custom:heating-radiators-card` | Una riga (o un blocco) di termosifone per ogni stanza di Tado Heating Manager, aggiunta da sola |
 | `custom:heating-ac-card` | Riga o blocco di un climatizzatore (modo, oscillazione, velocità, temperatura, popup con grafico) |
 | `custom:heating-acs-card` | Una riga (o un blocco) per ogni climatizzatore, trovati da soli o scelti a mano |
+| `custom:heating-usage-card` | Ore di riscaldamento e di valvola chiusa per stanza (oggi, ieri, 7 e 30 giorni), dallo storico |
 | `custom:tado-quota-card` | Quota API Tado: stato, indicatori, provenienza delle chiamate, voci espandibili |
 
 Le card sono separate dall'integrazione: dopo una modifica basta **ricaricare la dashboard**, senza riavviare Home Assistant.
@@ -40,7 +41,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.14.1`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.15.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -158,6 +159,26 @@ exclude:                          # facoltativo: climatizzatori da non mostrare
 names:                            # facoltativo: nome mostrato solo in questa card
   - entity: climate.condizionatore_cucina
     name: Cucina
+```
+
+`heating-usage-card` mostra per ogni stanza di Tado Heating Manager la temperatura e le ore in riscaldamento (arancio)
+e con la valvola chiusa (blu), con la quota di tempo in riscaldamento sul tempo acceso. Le ore si calcolano dallo
+storico di Home Assistant (attributo `hvac_action` del climate della stanza), senza sensori da creare: arrivano fin dove
+arriva il recorder (`purge_keep_days`). I giorni chiusi si leggono una volta e restano nella cache del browser; oggi si
+rilegge ogni 5 minuti. "7 gg" e "30 gg" sono oggi più i 6 o 29 giorni prima. Toccando l'icona si apre il termostato,
+toccando il nome il suo storico.
+
+```yaml
+type: custom:heating-usage-card
+title: Termosifoni                # facoltativo ("" = senza titolo)
+periods: [today, yesterday, 7d]   # facoltativo: today, yesterday, 7d, 30d
+order:                            # facoltativo: questi per primi
+  - climate.termo_soggiorno
+exclude:                          # facoltativo: stanze da non mostrare
+  - climate.termo_cameretta
+names:                            # facoltativo: nome mostrato solo in questa card
+  - entity: climate.termo_camera_da_letto
+    name: Camera
 ```
 
 ```yaml

@@ -1,19 +1,20 @@
 /* Tado Heating Manager Cards
  * Card Lovelace per l'integrazione Tado Heating Manager (custom_components/tado_heating_manager).
- * Un solo file con sette card, senza dipendenze e senza build:
+ * Un solo file con otto card, senza dipendenze e senza build:
  *   custom:heating-planner-card    programmi a fasce di tutte le stanze (Feriali / Weekend)
  *   custom:heating-radiator-card   riga (o blocco, layout: tile) di un termosifone
  *   custom:heating-radiators-card  una riga per ogni termosifone di Tado Heating Manager
  *   custom:heating-summary-card    riepilogo per la Home (termosifoni, programmi, quota); al tocco apre la plancia
  *   custom:heating-ac-card         riga (o blocco, layout: tile) di un climatizzatore
  *   custom:heating-acs-card        una riga (o un blocco) per ogni climatizzatore, trovati da soli
+ *   custom:heating-usage-card      ore di riscaldamento / valvola chiusa per stanza (oggi, ieri, 7 e 30 giorni)
  *   custom:tado-quota-card         quota API Tado (stato, indicatori, provenienza delle chiamate, voci espandibili)
  * Ogni card e' racchiusa in un blocco { } cosi' le costanti non si scontrano.
  *
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.14.1";
+const THM_CARDS_VERSION = "2.15.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -3034,6 +3035,435 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     type: "heating-acs-card",
     name: "Heating ACs",
     description: "Una riga (o un blocco) per ogni climatizzatore, trovati da soli o scelti a mano.",
+  });
+}
+
+// ===== heating-usage-card.js =====
+{
+  /* Heating Usage card: ore di riscaldamento e di valvola chiusa di ogni termosifone di Tado Heating Manager.
+   * Uso:  type: custom:heating-usage-card
+   *       title: Termosifoni                 # opzionale ("" = senza titolo)
+   *       periods: [today, yesterday, 7d]    # opzionale: today, yesterday, 7d, 30d (sempre in quest'ordine)
+   *       exclude: [climate.xxx]             # opzionale: stanze da non mostrare
+   *       order: [climate.yyy]               # opzionale: questi per primi
+   *       names: [{entity: climate.xxx, name: Camera}]   # opzionale
+   * Le stanze arrivano da sensor.hp_all_rooms; le ore si calcolano dallo storico (recorder) dell'attributo hvac_action
+   * del climate (heating / idle / off; non disponibile non conta). 7d/30d = oggi e i 6/29 giorni prima.
+   * I giorni gia' chiusi si chiedono una volta sola e restano in cache nel browser (localStorage); oggi si rilegge
+   * ogni 5 minuti e intanto si allunga con lo stato attuale.
+   */
+  const HU_COL = { heating: "#ff7043", idle: "#42a5f5", off: "#757575" };
+  const HU_PERIODS = {
+    today: { label: "Oggi", days: 1, skip: 0 },
+    yesterday: { label: "Ieri", days: 1, skip: 1 },
+    "7d": { label: "7 gg", days: 7, skip: 0 },
+    "30d": { label: "30 gg", days: 30, skip: 0 },
+  };
+  const HU_DEFAULT = ["today", "yesterday", "7d"];
+  const HU_STORE = "thm-usage-v1";
+  const HU_KEEP_DAYS = 40;
+  const HU_TODAY_REFRESH = 5 * 60e3;
+
+  const huEsc = (s) =>
+    String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const huPad = (n) => String(n).padStart(2, "0");
+  // mezzanotte locale di "i giorni fa"
+  const huMidnight = (ago) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - ago);
+  };
+  const huKey = (d) => `${d.getFullYear()}-${huPad(d.getMonth() + 1)}-${huPad(d.getDate())}`;
+  // stato contato: hvac_action, altrimenti lo stato del climate (come il package delle ore)
+  const huAct = (s, a) => {
+    const v = (a && a.hvac_action) || s;
+    return v === "heating" || v === "idle" || v === "off" ? v : null;
+  };
+
+  // Cache condivisa fra le card: "climate|AAAA-MM-GG" -> [secondi heating, idle, off] dei giorni chiusi.
+  const HU_CACHE = (() => {
+    try {
+      const raw = JSON.parse(window.localStorage.getItem(HU_STORE) || "{}");
+      return raw && typeof raw === "object" ? raw : {};
+    } catch (e) {
+      return {};
+    }
+  })();
+  const huSave = () => {
+    const oldest = huKey(huMidnight(HU_KEEP_DAYS));
+    Object.keys(HU_CACHE).forEach((k) => k.split("|")[1] < oldest && delete HU_CACHE[k]);
+    try {
+      window.localStorage.setItem(HU_STORE, JSON.stringify(HU_CACHE));
+    } catch (e) {
+      /* senza localStorage si ricalcola a ogni apertura */
+    }
+  };
+  const HU_INFLIGHT = new Map();
+
+  // punti {t (ms), act} di ogni entita' tra start e end
+  const huFetch = async (hass, ids, start, end) => {
+    const res = await hass.callWS({
+      type: "history/history_during_period",
+      start_time: start.toISOString(),
+      end_time: end.toISOString(),
+      entity_ids: ids,
+      include_start_time_state: true,
+      significant_changes_only: false,
+      minimal_response: false,
+      no_attributes: false,
+    });
+    const out = {};
+    ids.forEach((id) => {
+      out[id] = ((res && res[id]) || []).map((p) => {
+        const v = p.lu ?? p.lc ?? p.last_updated ?? p.last_changed;
+        const t = typeof v === "string" ? Date.parse(v) : v * 1000;
+        return { t: Math.max(t, start.getTime()), act: huAct(p.s ?? p.state, p.a ?? p.attributes) };
+      });
+    });
+    return out;
+  };
+
+  // secondi [heating, idle, off] fra start e end (ms) dai punti ordinati
+  const huSum = (points, start, end) => {
+    const tot = [0, 0, 0];
+    const idx = { heating: 0, idle: 1, off: 2 };
+    points.forEach((p, i) => {
+      const a = Math.max(p.t, start);
+      const b = Math.min(i + 1 < points.length ? points[i + 1].t : end, end);
+      if (b > a && p.act) tot[idx[p.act]] += (b - a) / 1000;
+    });
+    return tot;
+  };
+
+  // giorno chiuso (ago >= 1): dalla cache o dallo storico (una richiesta per giorno, condivisa fra le card)
+  const huDay = (hass, ids, ago) => {
+    const start = huMidnight(ago);
+    const key = huKey(start);
+    const missing = ids.filter((id) => !HU_CACHE[`${id}|${key}`]);
+    if (!missing.length) return Promise.resolve();
+    const fk = key + "|" + missing.join(",");
+    if (HU_INFLIGHT.has(fk)) return HU_INFLIGHT.get(fk);
+    const end = huMidnight(ago - 1);
+    const pr = huFetch(hass, missing, start, end)
+      .then((pts) => {
+        missing.forEach((id) => (HU_CACHE[`${id}|${key}`] = huSum(pts[id], start.getTime(), end.getTime()).map(Math.round)));
+        huSave();
+      })
+      .finally(() => HU_INFLIGHT.delete(fk));
+    HU_INFLIGHT.set(fk, pr);
+    return pr;
+  };
+
+  class HeatingUsageCard extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+      this._today = {}; // climate -> punti di oggi
+      this._todayKey = null;
+      this._todayAt = 0;
+      this._loading = false;
+      this._error = "";
+      this._sig = null;
+    }
+
+    setConfig(config) {
+      this._config = config || {};
+      const p = Array.isArray(this._config.periods) ? this._config.periods : HU_DEFAULT;
+      this._periods = Object.keys(HU_PERIODS).filter((k) => p.includes(k));
+      if (!this._periods.length) this._periods = HU_DEFAULT.slice();
+      this._sig = null;
+      this._build();
+      if (this._hass) this.hass = this._hass;
+    }
+
+    getCardSize() {
+      return 2 + (this._rooms ? this._rooms.length : 3);
+    }
+
+    getGridOptions() {
+      return { columns: "full" };
+    }
+
+    static getStubConfig() {
+      return {};
+    }
+
+    static getConfigForm() {
+      return {
+        schema: [
+          { name: "title", selector: { text: {} } },
+          {
+            name: "periods",
+            selector: {
+              select: {
+                multiple: true,
+                mode: "list",
+                options: Object.keys(HU_PERIODS).map((k) => ({ value: k, label: HU_PERIODS[k].label })),
+              },
+            },
+          },
+          { name: "order", selector: { entity: { domain: "climate", multiple: true } } },
+          { name: "exclude", selector: { entity: { domain: "climate", multiple: true } } },
+          {
+            name: "names",
+            selector: {
+              object: {
+                multiple: true,
+                label_field: "name",
+                fields: {
+                  entity: { label: "Termostato (climate)", required: true, selector: { entity: { domain: "climate" } } },
+                  name: { label: "Nome", required: true, selector: { text: {} } },
+                },
+              },
+            },
+          },
+        ],
+        computeLabel: (s) =>
+          ({
+            title: "Titolo",
+            periods: "Periodi",
+            exclude: "Stanze da non mostrare",
+            order: "Ordine",
+            names: "Nomi personalizzati",
+          }[s.name] || s.name),
+        computeHelper: (s) =>
+          ({
+            periods: "Predefiniti: Oggi, Ieri, 7 gg. 7 e 30 gg comprendono oggi.",
+            order: THM_ORDER_HELPER,
+            exclude: "Le altre stanze di Tado Heating Manager compaiono da sole, nell'ordine delle stanze.",
+            names: "Solo in questa card. Le stanze non elencate usano il nome di Tado Heating Manager.",
+          }[s.name]),
+      };
+    }
+
+    connectedCallback() {
+      if (!this._timer) this._timer = window.setInterval(() => this._tick(), 60e3);
+      if (this._hass) this._tick();
+    }
+
+    disconnectedCallback() {
+      if (this._timer) window.clearInterval(this._timer);
+      this._timer = null;
+    }
+
+    _roomList() {
+      const st = this._hass.states["sensor.hp_all_rooms"];
+      const rooms = (st && st.attributes.rooms) || [];
+      const skip = new Set(this._config.exclude || []);
+      const list = rooms.filter((r) => r.climate && !skip.has(r.climate));
+      const byId = new Map(list.map((r) => [r.climate, r]));
+      const names = {};
+      const n = this._config.names;
+      if (Array.isArray(n)) n.forEach((x) => x && x.entity && x.name && (names[x.entity] = String(x.name)));
+      else if (n && typeof n === "object") Object.keys(n).forEach((k) => n[k] && (names[k] = String(n[k])));
+      return thmOrder(list.map((r) => r.climate), this._config.order).map((id) => {
+        const r = byId.get(id);
+        return { climate: id, name: names[id] || r.name || id, thermometer: r.thermometer };
+      });
+    }
+
+    set hass(hass) {
+      const first = !this._hass;
+      this._hass = hass;
+      if (!this._config) return;
+      this._rooms = this._roomList();
+      // ridisegno solo se cambiano le stanze o lo stato dei loro climate/termometri
+      const sig = this._rooms
+        .map((r) => {
+          const c = hass.states[r.climate];
+          const t = r.thermometer && hass.states[r.thermometer];
+          return r.climate + r.name + (c ? c.last_updated : "-") + (t ? t.state : "-");
+        })
+        .join("|");
+      if (sig !== this._sig) {
+        const roomsChanged = !this._sig || this._sig.split("|").length !== this._rooms.length;
+        this._sig = sig;
+        if (roomsChanged || first) this._tick();
+        else this._render();
+      }
+    }
+
+    _ids() {
+      return this._rooms.map((r) => r.climate);
+    }
+
+    _maxDays() {
+      return Math.max(...this._periods.map((k) => HU_PERIODS[k].days + HU_PERIODS[k].skip));
+    }
+
+    // carica oggi (ogni 5 minuti o al cambio di giorno/stanze) e i giorni chiusi mancanti, dal piu' recente
+    async _tick() {
+      if (!this._hass || !this._config || !this._rooms || this._loading) {
+        this._render();
+        return;
+      }
+      const ids = this._ids();
+      if (!ids.length) {
+        this._render();
+        return;
+      }
+      this._loading = true;
+      try {
+        const key = huKey(huMidnight(0));
+        const idsSig = ids.join(",");
+        if (key !== this._todayKey || idsSig !== this._todayIds || Date.now() - this._todayAt > HU_TODAY_REFRESH) {
+          const pts = await huFetch(this._hass, ids, huMidnight(0), new Date());
+          this._today = pts;
+          this._todayKey = key;
+          this._todayIds = idsSig;
+          this._todayAt = Date.now();
+          this._render();
+        }
+        const max = this._maxDays();
+        for (let ago = 1; ago < max; ago++) {
+          const before = huKey(huMidnight(ago));
+          const had = ids.every((id) => HU_CACHE[`${id}|${before}`]);
+          await huDay(this._hass, ids, ago);
+          if (!had) this._render();
+        }
+        this._error = "";
+      } catch (err) {
+        this._error = "Storico non disponibile: " + ((err && err.message) || err);
+      } finally {
+        this._loading = false;
+      }
+      this._render();
+    }
+
+    // secondi [heating, idle, off] di oggi fino ad adesso, allungati con lo stato attuale del climate
+    _todayTotals(id) {
+      const pts = (this._today[id] || []).slice();
+      const st = this._hass.states[id];
+      if (st) {
+        const t = Date.parse(st.last_updated);
+        const act = huAct(st.state, st.attributes);
+        const last = pts[pts.length - 1];
+        if (!last) pts.push({ t: Math.max(t, huMidnight(0).getTime()), act });
+        else if (t > last.t && act !== last.act) pts.push({ t, act });
+      }
+      return huSum(pts, huMidnight(0).getTime(), Date.now());
+    }
+
+    // totali del periodo, null se mancano ancora dei giorni
+    _period(id, k) {
+      const p = HU_PERIODS[k];
+      const tot = [0, 0, 0];
+      for (let ago = p.skip; ago < p.skip + p.days; ago++) {
+        let d;
+        if (ago === 0) {
+          if (this._todayKey !== huKey(huMidnight(0))) return null;
+          d = this._todayTotals(id);
+        } else {
+          d = HU_CACHE[`${id}|${huKey(huMidnight(ago))}`];
+          if (!d) return null;
+        }
+        d.forEach((v, i) => (tot[i] += v));
+      }
+      return tot;
+    }
+
+    _build() {
+      this.shadowRoot.innerHTML = `
+        <style>
+          ha-card { padding: 12px 14px 10px; color: var(--primary-text-color); }
+          .title { font-size: 1.2em; font-weight: 600; margin: 0 2px 8px; }
+          .title:empty { display: none; }
+          table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+          th { font-size: .8em; font-weight: 500; color: var(--secondary-text-color); text-align: right; padding: 0 0 4px 6px; }
+          th:first-child { text-align: left; padding-left: 0; }
+          td { text-align: right; padding: 6px 0 6px 6px; border-top: 1px solid var(--divider-color); vertical-align: middle; white-space: nowrap; }
+          td.room { text-align: left; padding-left: 0; white-space: normal; }
+          .room-in { display: flex; align-items: center; gap: 6px; min-width: 0; }
+          .room ha-icon { --mdc-icon-size: 22px; cursor: pointer; flex: none; }
+          .room a { color: var(--primary-text-color); text-decoration: none; cursor: pointer; overflow: hidden; text-overflow: ellipsis; }
+          .room a:hover { text-decoration: underline; }
+          b { font-weight: 600; }
+          small { font-size: .78em; }
+          .heat { color: ${HU_COL.heating}; }
+          .idle { color: ${HU_COL.idle}; }
+          .sub { color: var(--secondary-text-color); }
+          .legend { margin-top: 8px; font-size: .75em; color: var(--secondary-text-color); line-height: 1.5; }
+          .msg { color: var(--secondary-text-color); padding: 8px 2px; }
+        </style>
+        <ha-card>
+          <div class="title"></div>
+          <div class="body"></div>
+          <div class="legend">
+            <span class="heat">●</span> ore riscaldamento &nbsp; <span class="idle">●</span> ore idle (valvola chiusa)
+            &nbsp; <span style="color:${HU_COL.off}">●</span> spento · % = quota di tempo in riscaldamento sul tempo acceso
+          </div>
+          <div class="msg err" hidden></div>
+        </ha-card>`;
+      this._e = {
+        title: this.shadowRoot.querySelector(".title"),
+        body: this.shadowRoot.querySelector(".body"),
+        err: this.shadowRoot.querySelector(".err"),
+      };
+      this.shadowRoot.addEventListener("click", (ev) => {
+        const more = ev.target.closest("[data-more]");
+        if (more) {
+          this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId: more.dataset.more }, bubbles: true, composed: true }));
+          return;
+        }
+        const hist = ev.target.closest("[data-history]");
+        if (hist) {
+          ev.preventDefault();
+          window.history.pushState(null, "", "/history?entity_id=" + encodeURIComponent(hist.dataset.history));
+          window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+        }
+      });
+    }
+
+    _cell(t) {
+      if (!t) return `<td class="sub">…</td>`;
+      const h = (s) => (s / 3600).toFixed(1);
+      const on = t[0] + t[1];
+      const perc = on > 0 ? Math.round((t[0] / on) * 100) : 0;
+      return `<td><span class="heat">${h(t[0])} h</span><br><small class="idle">${h(t[1])} h · ${perc}%</small></td>`;
+    }
+
+    _render() {
+      if (!this._e || !this._hass || !this._rooms) return;
+      const title = this._config.title === undefined ? "Termosifoni" : String(this._config.title || "");
+      this._e.title.textContent = title;
+      this._e.err.hidden = !this._error;
+      this._e.err.textContent = this._error;
+      if (!this._rooms.length) {
+        this._e.body.innerHTML = `<div class="msg">Nessun termosifone: aggiungi le stanze in Tado Heating Manager.<br>${THM_EMPTY_BTN}</div>`;
+        this._e.body.querySelector(".thm-cfg").addEventListener("click", thmOpenConfig);
+        return;
+      }
+      const head = this._periods.map((k) => `<th>${HU_PERIODS[k].label}</th>`).join("");
+      const rows = this._rooms
+        .map((r) => {
+          const c = this._hass.states[r.climate];
+          const a = (c && c.attributes) || {};
+          const act = c ? huAct(c.state, a) || "off" : "off";
+          const th = r.thermometer && this._hass.states[r.thermometer];
+          let temp = th && !isNaN(parseFloat(th.state)) ? parseFloat(th.state) : a.current_temperature;
+          temp = temp === undefined || temp === null || isNaN(Number(temp)) ? "--" : Number(temp).toFixed(1);
+          const sub = !c || c.state === "off" ? "off" : a.temperature != null ? `→ ${huEsc(a.temperature)}°` : huEsc(c.state);
+          return `<tr>
+            <td class="room"><div class="room-in">
+              <ha-icon icon="mdi:radiator" style="color:${HU_COL[act]}" data-more="${huEsc(r.climate)}"></ha-icon>
+              <a href="/history?entity_id=${encodeURIComponent(r.climate)}" data-history="${huEsc(r.climate)}">${huEsc(r.name)}</a>
+            </div></td>
+            <td><b>${huEsc(temp)}°</b><br><small class="sub">${sub}</small></td>
+            ${this._periods.map((k) => this._cell(this._period(r.climate, k))).join("")}
+          </tr>`;
+        })
+        .join("");
+      this._e.body.innerHTML = `<table><tr><th>Stanza</th><th>Temp</th>${head}</tr>${rows}</table>`;
+    }
+  }
+
+  if (!customElements.get("heating-usage-card")) {
+    customElements.define("heating-usage-card", HeatingUsageCard);
+  }
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: "heating-usage-card",
+    name: "Heating Usage",
+    description: "Ore di riscaldamento e valvola chiusa per stanza (oggi, ieri, 7 e 30 giorni), dallo storico di HA.",
   });
 }
 
