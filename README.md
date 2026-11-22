@@ -14,7 +14,7 @@ e quella della quota richiedono l'integrazione Tado Heating Manager.
 | `custom:heating-planner-card` | Programmi a fasce di tutte le stanze, tab Feriali / Weekend, ordine delle stanze |
 | `custom:heating-radiator-card` | Riga o blocco di un termosifone (modo, temperatura, valvola, offset, popup con grafico) |
 | `custom:heating-summary-card` | Riepilogo per la Home: termosifoni, prossimo cambio, quota; ogni parte apre il suo popup |
-| `custom:heating-summary-editable-card` | Come la precedente, con −/+ della temperatura e i modi (Caldo/Auto/Spento) in ogni riquadro |
+| `custom:heating-summary-editable-card` | Come la precedente, con −/+ della temperatura e il tasto della modalità (tendina Caldo/Auto/Spento) in ogni riquadro |
 | `custom:heating-radiators-card` | Una riga (o un blocco) di termosifone per ogni stanza di Tado Heating Manager, aggiunta da sola |
 | `custom:heating-ac-card` | Riga o blocco di un climatizzatore (modo, oscillazione, velocità, temperatura, popup con grafico) |
 | `custom:heating-acs-card` | Una riga (o un blocco) per ogni climatizzatore, trovati da soli o scelti a mano |
@@ -42,7 +42,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.19.0`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.20.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -137,8 +137,8 @@ type: custom:heating-summary-editable-card
 columns: 2                      # facoltativo: 2 (predefinito) o 3; stesse opzioni di heating-summary-card
 ```
 
-Come `heating-summary-card`, ma ogni riquadro ha −/+ (passi di 0,5 °C, 5–25 °C) e i tasti dei modi Caldo / Auto /
-Spento; il resto del riquadro apre il popup del termosifone. I tocchi su −/+ si sommano e partono con una sola chiamata
+Come `heating-summary-card`, ma ogni riquadro ha su una riga −/+ (passi di 0,5 °C, 5–25 °C) e un tasto con la modalità
+attuale, che apre la tendina Caldo / Auto / Spento; il resto del riquadro apre il popup del termosifone. I tocchi su −/+ si sommano e partono con una sola chiamata
 dopo circa un secondo di pausa (il valore scelto resta colorato finché HA non lo conferma). Da spento, −/+ parte dalla
 temperatura della stanza e accende. Con 3 colonne l'obiettivo va sotto la temperatura e i tasti −/+ ai lati.
 

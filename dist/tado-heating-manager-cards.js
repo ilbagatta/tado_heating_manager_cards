@@ -5,7 +5,7 @@
  *   custom:heating-radiator-card   riga (o blocco, layout: tile) di un termosifone
  *   custom:heating-radiators-card  una riga per ogni termosifone di Tado Heating Manager
  *   custom:heating-summary-card    riepilogo per la Home (termosifoni, programmi, quota); al tocco apre i popup
- *   custom:heating-summary-editable-card  come heating-summary-card, con +/- e modalita' in ogni riquadro
+ *   custom:heating-summary-editable-card  come heating-summary-card, con +/- e tasto della modalita' in ogni riquadro
  *   custom:heating-ac-card         riga (o blocco, layout: tile) di un climatizzatore
  *   custom:heating-acs-card        una riga (o un blocco) per ogni climatizzatore, trovati da soli
  *   custom:heating-usage-card      ore di riscaldamento / valvola chiusa per stanza (oggi, ieri, 7 e 30 giorni)
@@ -15,7 +15,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.19.0";
+const THM_CARDS_VERSION = "2.20.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -2043,8 +2043,9 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     preview: true,
   });
 
-  /* Heating Summary Editable card: come heating-summary-card, ma ogni riquadro ha -/+ della temperatura e i modi
-   * (Caldo / Auto / Spento). Toccando il resto del riquadro si apre il popup del termosifone.
+  /* Heating Summary Editable card: come heating-summary-card, ma ogni riquadro ha, su una riga, -/+ della temperatura
+   * e un tasto con la modalita' attuale che apre la tendina (Caldo / Auto / Spento). Il resto del riquadro apre il
+   * popup del termosifone.
    * Uso:  type: custom:heating-summary-editable-card   (stesse opzioni; columns predefinito 2)
    * I tocchi su -/+ si sommano: una sola climate.set_temperature dopo HSE_DEBOUNCE ms di pausa (meno chiamate Tado).
    */
@@ -2054,6 +2055,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     auto: { icon: "mdi:calendar-clock", label: "Auto", color: HS_GREEN },
     off: { icon: "mdi:power", label: "Spento", color: "var(--primary-text-color)" },
   };
+  const HSE_BAD = { icon: "mdi:help", label: "Non disponibile" };
   const HSE_DEBOUNCE = 900;
   const HSE_HOLD = 10000; // valore scelto mostrato finche' HA non lo conferma (al massimo 10 s)
   const hseClamp = (v) => Math.min(25, Math.max(5, Math.round(v * 2) / 2));
@@ -2062,6 +2064,12 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     constructor() {
       super();
       this._pend = {}; // climate -> { v, on, timer, sent }
+      this._menu = null; // tendina dei modi aperta: { el, id, off }
+    }
+
+    disconnectedCallback() {
+      super.disconnectedCallback();
+      this._closeMenu();
     }
 
     setConfig(config) {
@@ -2076,22 +2084,21 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       super._build();
       const style = document.createElement("style");
       style.textContent = `
-          .ctl { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+          .ctl { display: flex; align-items: center; gap: 3px; margin-top: 8px; }
           .ctl .tv { flex: 1; min-width: 0; text-align: center; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .ctl .tv.pend { color: var(--primary-color); }
-          .room.off .ctl .tv { font-weight: 400; color: var(--secondary-text-color); }
+          .room.off .ctl .tv { font-weight: 400; font-size: 12px; color: var(--secondary-text-color); }
           .b { flex: none; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
             background: rgba(128,128,128,.2); cursor: pointer; --mdc-icon-size: 18px; user-select: none; transition: background .15s ease; }
           .b:hover { background: rgba(128,128,128,.34); }
           .b:active { transform: scale(.92); }
           .b:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
-          .modes { display: flex; gap: 4px; margin-top: 6px; justify-content: space-between; }
-          .modes .b { flex: 1; width: auto; min-width: 0; border-radius: 14px; --mdc-icon-size: 17px; color: var(--secondary-text-color); }
-          .modes .b.on { color: #fff; }
-          .modes .b.on.heat { background: ${HS_ORANGE}; }
-          .modes .b.on.auto { background: ${HS_GREEN}; }
-          .modes .b.on.off { background: rgba(128,128,128,.55); }
+          .ctl .mb { margin-left: 2px; color: #fff; }
+          .ctl .mb.heat { background: ${HS_ORANGE}; }
+          .ctl .mb.auto { background: ${HS_GREEN}; }
+          .ctl .mb.off, .ctl .mb.bad { background: rgba(128,128,128,.55); }
+          .ctl .mb:hover { filter: brightness(1.1); }
           .room.off { opacity: 1; }
           .room.off .rtop, .room.off .rtemp, .room.off .rsub { opacity: .72; }
           .rsub .tv2 { display: none; }
@@ -2100,8 +2107,9 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .rooms.c3 .room { padding: 10px 8px; }
           .rooms.c3 .rsub .tv2 { display: inline; }
           .rooms.c3 .ctl .tv { display: none; }
-          .rooms.c3 .ctl { justify-content: space-between; }
-          .rooms.c3 .modes { gap: 3px; }`;
+          .rooms.c3 .ctl { justify-content: space-between; gap: 2px; }
+          .rooms.c3 .ctl .b { width: 26px; height: 26px; }
+          .rooms.c3 .ctl .mb { margin-left: 0; }`;
       this.shadowRoot.appendChild(style);
       // i tasti vengono prima del tocco sul riquadro (fase di cattura: il popup non si apre)
       const act = (ev) => {
@@ -2109,7 +2117,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         if (!b) return false;
         ev.stopPropagation();
         ev.preventDefault();
-        if (b.dataset.act === "mode") this._setMode(b.dataset.c, b.dataset.m);
+        if (b.dataset.act === "menu") this._toggleMenu(b);
         else this._step(b.dataset.c, b.dataset.act === "plus" ? 0.5 : -0.5);
         return true;
       };
@@ -2127,15 +2135,15 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       const html = super._tileHtml(x);
       const e = hsEsc(id);
       const val = pend ? `${pend.v.toFixed(1)}°` : x.bad ? "n.d." : x.off ? "Spento" : x.target !== null ? `${x.target.toFixed(1)}°` : "--";
-      const modes = x.c && Array.isArray(x.c.attributes.hvac_modes) ? HSE_ORDER.filter((m) => x.c.attributes.hvac_modes.includes(m)) : HSE_ORDER;
-      const cur = x.c ? x.c.state : "";
+      const cur = x.c && HSE_MODE[x.c.state] ? x.c.state : null;
+      const mi = cur ? HSE_MODE[cur] : HSE_BAD;
       const ctl = `
                 <div class="ctl">
                   <div class="b" data-act="minus" data-c="${e}" role="button" tabindex="0" title="Meno 0,5°"><ha-icon icon="mdi:minus"></ha-icon></div>
                   <span class="tv${pend ? " pend" : ""}">${val}</span>
                   <div class="b" data-act="plus" data-c="${e}" role="button" tabindex="0" title="Più 0,5°"><ha-icon icon="mdi:plus"></ha-icon></div>
-                </div>
-                <div class="modes">${modes.map((m) => `<div class="b ${m}${cur === m ? " on" : ""}" data-act="mode" data-m="${m}" data-c="${e}" role="button" tabindex="0" title="${HSE_MODE[m].label}"><ha-icon icon="${HSE_MODE[m].icon}"></ha-icon></div>`).join("")}</div>`;
+                  <div class="b mb ${cur || "bad"}" data-act="menu" data-c="${e}" role="button" tabindex="0" title="Modalità: ${mi.label}"><ha-icon icon="${mi.icon}"></ha-icon></div>
+                </div>`;
       // l'obiettivo sta gia' nei tasti: nel sottotitolo resta solo l'offset
       return html
         .replace(/<div class="rsub"><span>[^<]*<\/span>/, `<div class="rsub"><span>${x.bad ? "n.d." : ""}<span class="tv2${pend ? " pend" : ""}">${x.bad ? "" : pend ? val : x.off ? "spento" : `→ ${val}`}</span></span>`)
@@ -2192,6 +2200,73 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       }
       if (c.state === mode) return;
       this._hass.callService("climate", "set_hvac_mode", { entity_id: id, hvac_mode: mode });
+    }
+
+    // tendina dei modi sotto (o sopra) il tasto; un secondo tocco sul tasto la chiude
+    _toggleMenu(btn) {
+      const id = btn.dataset.c;
+      const open = this._menu && this._menu.id === id;
+      this._closeMenu();
+      if (open) return;
+      const c = this._st(id);
+      if (!c || !this._hass) return;
+      const avail = Array.isArray(c.attributes.hvac_modes) ? HSE_ORDER.filter((m) => c.attributes.hvac_modes.includes(m)) : HSE_ORDER;
+      const m = document.createElement("div");
+      m.style.cssText =
+        "position:fixed;z-index:9999;min-width:150px;padding:6px;border-radius:14px;" +
+        "background:var(--card-background-color,#fff);color:var(--primary-text-color);" +
+        "box-shadow:0 6px 24px rgba(0,0,0,.35);font-family:var(--paper-font-body1_-_font-family,inherit);";
+      m.innerHTML = avail
+        .map((k) =>
+          `<div data-m="${k}" style="display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;border-radius:10px;cursor:pointer;font-size:14px;` +
+          `${c.state === k ? "background:rgba(128,128,128,.25);font-weight:600;" : ""}">` +
+          `<ha-icon icon="${HSE_MODE[k].icon}" style="--mdc-icon-size:20px;color:${HSE_MODE[k].color}"></ha-icon>${HSE_MODE[k].label}</div>`)
+        .join("");
+      document.body.appendChild(m);
+      const r = btn.getBoundingClientRect();
+      const w = m.offsetWidth;
+      const h = m.offsetHeight;
+      const left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
+      let top = r.bottom + 6;
+      if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+      m.style.left = left + "px";
+      m.style.top = top + "px";
+      m.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const t = ev.target.closest("[data-m]");
+        if (!t) return;
+        this._closeMenu();
+        this._setMode(id, t.dataset.m);
+      });
+      // fuori dalla tendina la chiude, tranne il tasto che l'ha aperta (ci pensa il suo click)
+      const away = (ev) => {
+        const path = ev.composedPath();
+        if (path.includes(m)) return;
+        if (path.some((x) => x.dataset && x.dataset.act === "menu" && x.dataset.c === id)) return;
+        this._closeMenu();
+      };
+      const key = (ev) => ev.key === "Escape" && this._closeMenu();
+      const close = () => this._closeMenu();
+      document.addEventListener("pointerdown", away, true);
+      document.addEventListener("keydown", key);
+      window.addEventListener("scroll", close, true);
+      window.addEventListener("resize", close);
+      this._menu = {
+        el: m, id,
+        off: () => {
+          document.removeEventListener("pointerdown", away, true);
+          document.removeEventListener("keydown", key);
+          window.removeEventListener("scroll", close, true);
+          window.removeEventListener("resize", close);
+        },
+      };
+    }
+
+    _closeMenu() {
+      if (!this._menu) return;
+      this._menu.off();
+      this._menu.el.remove();
+      this._menu = null;
     }
 
     _refresh() {
