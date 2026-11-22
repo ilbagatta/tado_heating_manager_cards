@@ -15,7 +15,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.23.0";
+const THM_CARDS_VERSION = "2.24.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1803,9 +1803,10 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .acts { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: 8px; }
           .act { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 5px; min-width: 0;
             padding: 10px 6px 9px; border-radius: 14px; cursor: pointer; overflow: hidden; -webkit-tap-highlight-color: transparent;
-            background: linear-gradient(180deg, rgba(var(--c), .14), rgba(var(--c), .05)); border: 1.5px solid rgba(var(--c), .22);
+            background: rgba(128,128,128,.10); border: 1.5px solid transparent;
             transition: border-color .3s ease, background-color .2s ease, transform .1s ease; }
-          .act:hover { border-color: rgba(var(--c), .45); }
+          /* spento: fondo neutro come i riquadri delle stanze, colore solo nell'icona; acceso: tutto colorato */
+          .act:hover { background-color: rgba(128,128,128,.16); border-color: rgba(var(--c), .35); }
           .act:active { transform: scale(.97); }
           .act:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
           .act .ic { width: 34px; height: 34px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center;
@@ -1862,10 +1863,12 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       });
     }
 
-    // Riscalda prima / Boost: un tocco preme il pulsante dell'integrazione
+    // Riscalda prima / Boost: un tocco preme il pulsante dell'integrazione; sul boost in corso lo ferma
+    // (stop_boost rimette termosifoni e condizionatori com'erano prima)
     _press(el) {
       if (!this._hass) return;
-      this._hass.callService("button", "press", { entity_id: el.dataset.press });
+      if (el.dataset.stop) this._hass.callService("tado_heating_manager", "stop_boost", {});
+      else this._hass.callService("button", "press", { entity_id: el.dataset.press });
       el.classList.add("sent");
       setTimeout(() => el.classList.remove("sent"), 700);
     }
@@ -2100,7 +2103,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           const on = !!act && act.state === "on" && !!act.attributes.super === a.super;
           const until = on ? hsTime(act.attributes.until) : "";
           const when = on ? (until ? `fino alle ${until}` : "attivo") : st.state === "unavailable" ? "non disponibile" : hsAgo(st.state);
-          return `<div class="act${on ? " on" : ""}" style="--c:${a.rgb}" data-press="${hsEsc(a.id)}" role="button" tabindex="0" title="${hsEsc(a.name)} · ${hsEsc(when)}">
+          return `<div class="act${on ? " on" : ""}" style="--c:${a.rgb}" data-press="${hsEsc(a.id)}"${on ? ' data-stop="1"' : ""} role="button" tabindex="0" title="${hsEsc(a.name)} · ${hsEsc(when)}${on ? " · tocca per fermare" : ""}">
               <div class="ic"><ha-icon icon="${hsEsc(st.attributes.icon || a.icon)}"></ha-icon></div>
               <div class="n">${hsEsc(a.short)}</div><div class="w">${hsEsc(when)}</div></div>`;
         });
