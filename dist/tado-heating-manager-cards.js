@@ -15,7 +15,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.22.0";
+const THM_CARDS_VERSION = "2.23.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1586,10 +1586,11 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   const HS_BOOST_ACTIVE = "binary_sensor.hp_all_boost_active";
   // tasti in fondo: lo stato del pulsante e' l'ora dell'ultima pressione
   const HS_ACTIONS = [
-    { id: "button.hp_all_preheat", name: "Riscalda prima di rientrare", icon: "mdi:home-thermometer" },
-    { id: "button.hp_all_boost", name: "Boost", icon: "mdi:radiator", active: HS_BOOST_ACTIVE, super: false },
+    // short = etichetta sul tasto (tre in una riga), name = nome intero (suggerimento); rgb = colore del tasto
+    { id: "button.hp_all_preheat", name: "Riscalda prima di rientrare", short: "Preriscalda", icon: "mdi:home-thermometer", rgb: "38,166,154" },
+    { id: "button.hp_all_boost", name: "Boost", short: "Boost", icon: "mdi:radiator", rgb: "255,138,61", active: HS_BOOST_ACTIVE, super: false },
     // super boost: anche i condizionatori; solo se l'integrazione ne ha (attributo climates del pulsante)
-    { id: "button.hp_all_super_boost", name: "Super boost", icon: "mdi:rocket-launch", active: HS_BOOST_ACTIVE, super: true, needsClimates: true },
+    { id: "button.hp_all_super_boost", name: "Super boost (termosifoni e condizionatori)", short: "Super boost", icon: "mdi:rocket-launch", rgb: "171,71,188", active: HS_BOOST_ACTIVE, super: true, needsClimates: true },
   ];
   const HS_RTF = typeof Intl !== "undefined" && Intl.RelativeTimeFormat ? new Intl.RelativeTimeFormat("it", { numeric: "auto" }) : null;
   // "5 giorni fa", "2 ore fa", "ieri"
@@ -1798,23 +1799,25 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .bar { height: 6px; border-radius: 3px; background: rgba(128,128,128,.2); overflow: hidden; margin-top: 5px; }
           .bar > div { height: 100%; border-radius: 3px; transition: width .6s ease, background .6s ease; }
           .q { flex: 1; min-width: 0; }
-          .acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-          .act { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 7px 10px; border-radius: 14px;
-            background: rgba(128,128,128,.10); border: 1.5px solid transparent; cursor: pointer; transition: background-color .2s ease, border-color .4s ease;
-            -webkit-tap-highlight-color: transparent; }
-          .act:hover { background-color: rgba(128,128,128,.18); }
-          .act:last-child:nth-child(odd) { grid-column: 1 / -1; } /* tre tasti: l'ultimo su tutta la riga */
-          .act:active { transform: scale(.98); }
+          /* tasti in fondo: tutti su una riga, colorati ognuno col suo colore (--c = r,g,b) */
+          .acts { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: 8px; }
+          .act { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 5px; min-width: 0;
+            padding: 10px 6px 9px; border-radius: 14px; cursor: pointer; overflow: hidden; -webkit-tap-highlight-color: transparent;
+            background: linear-gradient(180deg, rgba(var(--c), .14), rgba(var(--c), .05)); border: 1.5px solid rgba(var(--c), .22);
+            transition: border-color .3s ease, background-color .2s ease, transform .1s ease; }
+          .act:hover { border-color: rgba(var(--c), .45); }
+          .act:active { transform: scale(.97); }
           .act:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
-          .act .ic { width: 30px; height: 30px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center;
-            background: rgba(128,128,128,.2); color: var(--secondary-text-color); --mdc-icon-size: 18px; transition: all .4s ease; }
-          .act .tx { min-width: 0; }
-          .act .n { font-size: 13px; font-weight: 600; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-          .act .w { font-size: 11.5px; color: var(--secondary-text-color); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-          .act.on { border-color: rgba(255,138,61,.6); background-image: radial-gradient(120% 100% at 50% 100%, rgba(255,122,40,.32), rgba(255,122,40,0) 70%); }
-          .act.on .ic { background: rgba(255,138,61,.22); color: ${HS_ORANGE}; }
-          .act.on .w { color: ${HS_ORANGE}; }
-          .act.sent .ic { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+          .act .ic { width: 34px; height: 34px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center;
+            background: rgba(var(--c), .22); color: rgb(var(--c)); --mdc-icon-size: 19px; transition: all .3s ease; }
+          .act .n { font-size: 12.5px; font-weight: 600; line-height: 1.15; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .act .w { font-size: 11px; color: var(--secondary-text-color); line-height: 1.1; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .act.on { border-color: rgba(var(--c), .75);
+            background: radial-gradient(120% 90% at 50% 100%, rgba(var(--c), .38), rgba(var(--c), 0) 75%), rgba(var(--c), .08); }
+          .act.on .ic { background: rgb(var(--c)); color: #fff; box-shadow: 0 0 0 4px rgba(var(--c), .18); animation: hs-pulse 1.8s ease-in-out infinite; }
+          .act.on .w { color: rgb(var(--c)); font-weight: 600; }
+          .act.sent .ic { background: rgb(var(--c)); color: #fff; }
+          @keyframes hs-pulse { 0%, 100% { box-shadow: 0 0 0 3px rgba(var(--c), .18); } 50% { box-shadow: 0 0 0 7px rgba(var(--c), .06); } }
           .empty { position: relative; margin-top: 12px; font-size: 13px; color: var(--secondary-text-color); }
           @keyframes hs-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
           @keyframes hs-flicker {
@@ -2097,9 +2100,9 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           const on = !!act && act.state === "on" && !!act.attributes.super === a.super;
           const until = on ? hsTime(act.attributes.until) : "";
           const when = on ? (until ? `fino alle ${until}` : "attivo") : st.state === "unavailable" ? "non disponibile" : hsAgo(st.state);
-          return `<div class="act${on ? " on" : ""}" data-press="${hsEsc(a.id)}" role="button" tabindex="0" title="${hsEsc(a.name)}">
+          return `<div class="act${on ? " on" : ""}" style="--c:${a.rgb}" data-press="${hsEsc(a.id)}" role="button" tabindex="0" title="${hsEsc(a.name)} · ${hsEsc(when)}">
               <div class="ic"><ha-icon icon="${hsEsc(st.attributes.icon || a.icon)}"></ha-icon></div>
-              <div class="tx"><div class="n">${hsEsc(a.name)}</div><div class="w">${hsEsc(when)}</div></div></div>`;
+              <div class="n">${hsEsc(a.short)}</div><div class="w">${hsEsc(when)}</div></div>`;
         });
         if (acts.length) foot.push(`<div class="acts">${acts.join("")}</div>`);
       }

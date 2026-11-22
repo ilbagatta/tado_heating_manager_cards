@@ -42,7 +42,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.22.0`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.23.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -136,7 +136,7 @@ E' disattivato quando sono gia' tutti spenti.
 In fondo, i tasti **Riscalda prima di rientrare** (`button.hp_all_preheat`) e **Boost** (`button.hp_all_boost`) con
 l'ultima attivazione ("2 ore fa"); con il boost in corso il tasto e' arancione e mostra "fino alle …".
 Un tocco preme il pulsante. **Super boost** (`button.hp_all_super_boost`, integrazione aggiornata al 2026-11-22 o successiva) compare solo
-se nelle opzioni dell'integrazione sono scelti i condizionatori; con tre tasti l'ultimo occupa tutta la riga.
+se nelle opzioni dell'integrazione sono scelti i condizionatori; i tasti stanno tutti su una riga, ognuno col suo colore ("Preriscalda" = Riscalda prima di rientrare, verde acqua; Boost arancione, Super boost viola).
 
 ```yaml
 type: custom:heating-summary-editable-card
