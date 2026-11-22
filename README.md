@@ -41,7 +41,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.17.0`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.18.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -115,6 +115,7 @@ title: Riscaldamento            # facoltativo
 columns: 3                      # facoltativo: tessere delle stanze su 2 o 3 colonne (predefinito 3)
 show_planner: true              # facoltativo: prossimo cambio e stato dei programmi
 show_quota: true                # facoltativo: barra della quota (solo se ci sono i sensori)
+show_turn_off: true             # facoltativo: tasto "spegni tutti" (button.hp_all_turn_off)
 exclude:                        # facoltativo
   - climate.termo_bagno
 ```
@@ -125,6 +126,10 @@ orari). Lo sfondo si scalda quando un termosifone riscalda.
 
 Al tocco: una stanza apre il popup della `heating-radiator-card` (grafico, modi, temperatura), i programmi
 aprono la `heating-planner-card` e la barra della quota la `tado-quota-card`, entrambe in un popup.
+
+Il tasto di spegnimento nell'intestazione (e nel popup dei programmi) spegne tutti i termosifoni con
+`button.hp_all_turn_off`: al primo tocco chiede conferma ("Spegni tutti?"), il secondo entro 3 secondi spegne.
+E' disattivato quando sono gia' tutti spenti.
 
 ```yaml
 type: custom:heating-ac-card
