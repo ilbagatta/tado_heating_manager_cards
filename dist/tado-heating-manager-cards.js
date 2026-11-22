@@ -14,7 +14,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.16.0";
+const THM_CARDS_VERSION = "2.17.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1550,6 +1550,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
    * sulla quota: tado-quota-card in un popup.
    * Uso:  type: custom:heating-summary-card
    *       title: Riscaldamento          # facoltativo
+   *       columns: 3                     # facoltativo: tessere delle stanze su 2 o 3 colonne (predefinito 3)
    *       show_planner: true             # facoltativo: prossimo cambio dei programmi
    *       show_quota: true               # facoltativo: barra della quota Tado (se ci sono i sensori)
    *       exclude: [climate.xxx]         # facoltativo
@@ -1617,6 +1618,10 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         schema: [
           { name: "title", selector: { text: {} } },
           {
+            name: "columns",
+            selector: { select: { mode: "dropdown", options: [{ value: "2", label: "2 colonne" }, { value: "3", label: "3 colonne" }] } },
+          },
+          {
             type: "grid", name: "", flatten: true,
             schema: [
               { name: "show_planner", selector: { boolean: {} } },
@@ -1626,7 +1631,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           { name: "exclude", selector: { entity: { domain: "climate", multiple: true } } },
         ],
         computeLabel: (s) =>
-          ({ title: "Titolo", show_planner: "Prossimo cambio", show_quota: "Quota Tado", exclude: "Stanze da non mostrare" }[s.name] || s.name),
+          ({ title: "Titolo", columns: "Colonne delle stanze", show_planner: "Prossimo cambio", show_quota: "Quota Tado", exclude: "Stanze da non mostrare" }[s.name] || s.name),
       };
     }
 
@@ -1698,6 +1703,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .avg .v small { font-size: 14px; margin-left: 1px; }
           .avg .l { font-size: 11px; color: var(--secondary-text-color); margin-top: 3px; }
           .rooms { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+          .rooms.c2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .room {
             border-radius: 14px; padding: 10px 11px; background: rgba(128,128,128,.10); border: 1.5px solid transparent;
             min-width: 0; transition: all .4s ease;
@@ -1885,6 +1891,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       const avg = temps.length ? temps.reduce((a, b) => a + b, 0) / temps.length : null;
 
       e.card.classList.toggle("warm", heating > 0);
+      e.rooms.classList.toggle("c2", thmColumns(this._config.columns) === 2);
       e.title.textContent = this._config.title || "Riscaldamento";
       e.sub.textContent = !rooms.length
         ? "Nessun termosifone"

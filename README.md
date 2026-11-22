@@ -41,7 +41,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.16.0`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.17.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -112,6 +112,7 @@ pagina dell'integrazione. Se nessuna stanza ha fasce, la card dei programmi si a
 ```yaml
 type: custom:heating-summary-card
 title: Riscaldamento            # facoltativo
+columns: 3                      # facoltativo: tessere delle stanze su 2 o 3 colonne (predefinito 3)
 show_planner: true              # facoltativo: prossimo cambio e stato dei programmi
 show_quota: true                # facoltativo: barra della quota (solo se ci sono i sensori)
 exclude:                        # facoltativo
