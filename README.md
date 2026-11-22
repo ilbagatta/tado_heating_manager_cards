@@ -42,7 +42,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.20.2`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.22.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -117,6 +117,7 @@ columns: 3                      # facoltativo: tessere delle stanze su 2 o 3 col
 show_planner: true              # facoltativo: prossimo cambio e stato dei programmi
 show_quota: true                # facoltativo: barra della quota (solo se ci sono i sensori)
 show_turn_off: true             # facoltativo: tasto "spegni tutti" (button.hp_all_turn_off)
+show_actions: true              # facoltativo: tasti "Riscalda prima di rientrare", "Boost" e "Super boost"
 exclude:                        # facoltativo
   - climate.termo_bagno
 ```
@@ -131,6 +132,11 @@ aprono la `heating-planner-card` e la barra della quota la `tado-quota-card`, en
 Il tasto di spegnimento nell'intestazione (e nel popup dei programmi) spegne tutti i termosifoni con
 `button.hp_all_turn_off`: al primo tocco chiede conferma ("Spegni tutti?"), il secondo entro 3 secondi spegne.
 E' disattivato quando sono gia' tutti spenti.
+
+In fondo, i tasti **Riscalda prima di rientrare** (`button.hp_all_preheat`) e **Boost** (`button.hp_all_boost`) con
+l'ultima attivazione ("2 ore fa"); con il boost in corso il tasto e' arancione e mostra "fino alle …".
+Un tocco preme il pulsante. **Super boost** (`button.hp_all_super_boost`, integrazione aggiornata al 2026-11-22 o successiva) compare solo
+se nelle opzioni dell'integrazione sono scelti i condizionatori; con tre tasti l'ultimo occupa tutta la riga.
 
 ```yaml
 type: custom:heating-summary-editable-card

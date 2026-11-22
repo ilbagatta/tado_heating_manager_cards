@@ -15,7 +15,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.20.2";
+const THM_CARDS_VERSION = "2.22.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1555,6 +1555,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
    *       show_planner: true             # facoltativo: prossimo cambio dei programmi
    *       show_quota: true               # facoltativo: barra della quota Tado (se ci sono i sensori)
    *       show_turn_off: true            # facoltativo: tasto "spegni tutti" (button.hp_all_turn_off, due tocchi)
+   *       show_actions: true             # facoltativo: tasti "Riscalda prima di rientrare", "Boost" e "Super boost"
    *       exclude: [climate.xxx]         # facoltativo
    */
   const HS_ORANGE = "#ff8a3d";
@@ -1582,6 +1583,27 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     return `${HS_DAYS[d.getDay()]} ${hh}`;
   };
   const HS_OFF_ID = "button.hp_all_turn_off";
+  const HS_BOOST_ACTIVE = "binary_sensor.hp_all_boost_active";
+  // tasti in fondo: lo stato del pulsante e' l'ora dell'ultima pressione
+  const HS_ACTIONS = [
+    { id: "button.hp_all_preheat", name: "Riscalda prima di rientrare", icon: "mdi:home-thermometer" },
+    { id: "button.hp_all_boost", name: "Boost", icon: "mdi:radiator", active: HS_BOOST_ACTIVE, super: false },
+    // super boost: anche i condizionatori; solo se l'integrazione ne ha (attributo climates del pulsante)
+    { id: "button.hp_all_super_boost", name: "Super boost", icon: "mdi:rocket-launch", active: HS_BOOST_ACTIVE, super: true, needsClimates: true },
+  ];
+  const HS_RTF = typeof Intl !== "undefined" && Intl.RelativeTimeFormat ? new Intl.RelativeTimeFormat("it", { numeric: "auto" }) : null;
+  // "5 giorni fa", "2 ore fa", "ieri"
+  const hsAgo = (iso) => {
+    const t = Date.parse(iso);
+    if (isNaN(t)) return "mai usato";
+    const sec = Math.round((Date.now() - t) / 1000);
+    if (sec < 60) return "adesso";
+    const steps = [[60, "minute"], [3600, "hour"], [86400, "day"], [86400 * 30, "month"], [86400 * 365, "year"]];
+    let unit = steps[0];
+    for (const x of steps) if (sec >= x[0]) unit = x;
+    const n = Math.floor(sec / unit[0]);
+    return HS_RTF ? HS_RTF.format(-n, unit[1]) : `${n} ${unit[1]} fa`;
+  };
   const HS_OFF_ARM_MS = 3000;
   // tasto "spegni tutti": tondo; al primo tocco rosso con la domanda, il secondo entro 3 s spegne
   const HS_OFF_CSS = `
@@ -1606,12 +1628,20 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       this._offOn = 0; // termosifoni accesi (per abilitare "spegni tutti")
     }
 
+    connectedCallback() {
+      // "x minuti fa" va avanti anche senza cambi di stato
+      clearInterval(this._tick);
+      this._tick = setInterval(() => { this._sig = ""; this._update(); }, 60000);
+    }
+
     disconnectedCallback() {
+      clearInterval(this._tick);
+      this._tick = null;
       this._closePop();
     }
 
     setConfig(config) {
-      this._config = { title: "Riscaldamento", show_planner: true, show_quota: true, show_turn_off: true, ...(config || {}) };
+      this._config = { title: "Riscaldamento", show_planner: true, show_quota: true, show_turn_off: true, show_actions: true, ...(config || {}) };
       this._sig = "";
       this._quotaIds = null;
       this._build();
@@ -1643,12 +1673,13 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
               { name: "show_planner", selector: { boolean: {} } },
               { name: "show_quota", selector: { boolean: {} } },
               { name: "show_turn_off", selector: { boolean: {} } },
+              { name: "show_actions", selector: { boolean: {} } },
             ],
           },
           { name: "exclude", selector: { entity: { domain: "climate", multiple: true } } },
         ],
         computeLabel: (s) =>
-          ({ title: "Titolo", columns: "Colonne delle stanze", show_planner: "Prossimo cambio", show_quota: "Quota Tado", show_turn_off: "Tasto spegni tutti", exclude: "Stanze da non mostrare" }[s.name] || s.name),
+          ({ title: "Titolo", columns: "Colonne delle stanze", show_planner: "Prossimo cambio", show_quota: "Quota Tado", show_turn_off: "Tasto spegni tutti", show_actions: "Riscalda prima / Boost", exclude: "Stanze da non mostrare" }[s.name] || s.name),
       };
     }
 
@@ -1681,7 +1712,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       if (this._pop) this._pop.el.hass = hass;
       if (!this._config) return;
       if (!this._quotaIds || !this._quotaFromReg) this._quotaIds = this._resolveQuota();
-      const ids = ["sensor.hp_all_rooms", "switch.hp_all_enabled", HS_OFF_ID, ...Object.values(this._quotaIds)];
+      const ids = ["sensor.hp_all_rooms", "switch.hp_all_enabled", HS_OFF_ID, HS_BOOST_ACTIVE, ...HS_ACTIONS.map((a) => a.id), ...Object.values(this._quotaIds)];
       this._rooms().forEach((r) => ids.push(r.climate, r.thermometer, r.valve_temperature, r.valve, r.offset_entity, r.fan, `sensor.hp_${r.slug}_current`, `switch.hp_${r.slug}_enabled`));
       const sig = ids.map((id) => {
         const s = this._st(id);
@@ -1767,6 +1798,23 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .bar { height: 6px; border-radius: 3px; background: rgba(128,128,128,.2); overflow: hidden; margin-top: 5px; }
           .bar > div { height: 100%; border-radius: 3px; transition: width .6s ease, background .6s ease; }
           .q { flex: 1; min-width: 0; }
+          .acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+          .act { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 7px 10px; border-radius: 14px;
+            background: rgba(128,128,128,.10); border: 1.5px solid transparent; cursor: pointer; transition: background-color .2s ease, border-color .4s ease;
+            -webkit-tap-highlight-color: transparent; }
+          .act:hover { background-color: rgba(128,128,128,.18); }
+          .act:last-child:nth-child(odd) { grid-column: 1 / -1; } /* tre tasti: l'ultimo su tutta la riga */
+          .act:active { transform: scale(.98); }
+          .act:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+          .act .ic { width: 30px; height: 30px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center;
+            background: rgba(128,128,128,.2); color: var(--secondary-text-color); --mdc-icon-size: 18px; transition: all .4s ease; }
+          .act .tx { min-width: 0; }
+          .act .n { font-size: 13px; font-weight: 600; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+          .act .w { font-size: 11.5px; color: var(--secondary-text-color); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .act.on { border-color: rgba(255,138,61,.6); background-image: radial-gradient(120% 100% at 50% 100%, rgba(255,122,40,.32), rgba(255,122,40,0) 70%); }
+          .act.on .ic { background: rgba(255,138,61,.22); color: ${HS_ORANGE}; }
+          .act.on .w { color: ${HS_ORANGE}; }
+          .act.sent .ic { background: var(--primary-color); color: var(--text-primary-color, #fff); }
           .empty { position: relative; margin-top: 12px; font-size: 13px; color: var(--secondary-text-color); }
           @keyframes hs-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
           @keyframes hs-flicker {
@@ -1797,7 +1845,9 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         const room = ev.target.closest("[data-room]");
         const pop = ev.target.closest("[data-pop]");
         const off = ev.target.closest("[data-off]");
+        const press = ev.target.closest("[data-press]");
         if (off) this._offTap(off);
+        else if (press) this._press(press);
         else if (room) this._openRoom(room.dataset.room);
         else if (pop) this._openPop(pop.dataset.pop);
         else return false;
@@ -1807,6 +1857,14 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       this._el.card.addEventListener("keydown", (ev) => {
         if ((ev.key === "Enter" || ev.key === " ") && go(ev)) ev.preventDefault();
       });
+    }
+
+    // Riscalda prima / Boost: un tocco preme il pulsante dell'integrazione
+    _press(el) {
+      if (!this._hass) return;
+      this._hass.callService("button", "press", { entity_id: el.dataset.press });
+      el.classList.add("sent");
+      setTimeout(() => el.classList.remove("sent"), 700);
     }
 
     // "Spegni tutti": primo tocco = conferma (3 s), secondo = button.hp_all_turn_off
@@ -2028,6 +2086,22 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
             <div class="q"><div style="display:flex;gap:8px"><span class="t">Quota Tado <b>${pct.toFixed(0)}%</b></span><span>${hsEsc(parts)}</span></div>
             <div class="bar"><div style="width:${Math.min(100, Math.max(0, pct))}%;background:${color}"></div></div></div></div>`);
         }
+      }
+      if (this._config.show_actions) {
+        const acts = HS_ACTIONS.filter((a) => {
+          const st = this._st(a.id);
+          return st && (!a.needsClimates || (Array.isArray(st.attributes.climates) && st.attributes.climates.length));
+        }).map((a) => {
+          const st = this._st(a.id);
+          const act = a.active ? this._st(a.active) : null;
+          const on = !!act && act.state === "on" && !!act.attributes.super === a.super;
+          const until = on ? hsTime(act.attributes.until) : "";
+          const when = on ? (until ? `fino alle ${until}` : "attivo") : st.state === "unavailable" ? "non disponibile" : hsAgo(st.state);
+          return `<div class="act${on ? " on" : ""}" data-press="${hsEsc(a.id)}" role="button" tabindex="0" title="${hsEsc(a.name)}">
+              <div class="ic"><ha-icon icon="${hsEsc(st.attributes.icon || a.icon)}"></ha-icon></div>
+              <div class="tx"><div class="n">${hsEsc(a.name)}</div><div class="w">${hsEsc(when)}</div></div></div>`;
+        });
+        if (acts.length) foot.push(`<div class="acts">${acts.join("")}</div>`);
       }
       e.foot.innerHTML = foot.join("");
     }
