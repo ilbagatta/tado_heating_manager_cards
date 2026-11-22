@@ -4,7 +4,7 @@
  *   custom:heating-planner-card    programmi a fasce di tutte le stanze (Feriali / Weekend)
  *   custom:heating-radiator-card   riga (o blocco, layout: tile) di un termosifone
  *   custom:heating-radiators-card  una riga per ogni termosifone di Tado Heating Manager
- *   custom:heating-summary-card    riepilogo per la Home (termosifoni, programmi, quota); al tocco apre la plancia
+ *   custom:heating-summary-card    riepilogo per la Home (termosifoni, programmi, quota); al tocco apre i popup
  *   custom:heating-ac-card         riga (o blocco, layout: tile) di un climatizzatore
  *   custom:heating-acs-card        una riga (o un blocco) per ogni climatizzatore, trovati da soli
  *   custom:heating-usage-card      ore di riscaldamento / valvola chiusa per stanza (oggi, ieri, 7 e 30 giorni)
@@ -14,7 +14,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.15.0";
+const THM_CARDS_VERSION = "2.16.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1545,10 +1545,11 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
 
 // ===== heating-summary-card.js =====
 {
-  /* Heating Summary card: riepilogo per la Home (termosifoni, programmi, quota). Un tocco apre la plancia Riscaldamento.
+  /* Heating Summary card: riepilogo per la Home (termosifoni, programmi, quota).
+   * Tocco su una stanza: popup della heating-radiator-card (grafico); sui programmi: heating-planner-card in un popup;
+   * sulla quota: tado-quota-card in un popup.
    * Uso:  type: custom:heating-summary-card
    *       title: Riscaldamento          # facoltativo
-   *       navigation_path: /tado-heating # facoltativo: plancia aperta al tocco
    *       show_planner: true             # facoltativo: prossimo cambio dei programmi
    *       show_quota: true               # facoltativo: barra della quota Tado (se ci sono i sensori)
    *       exclude: [climate.xxx]         # facoltativo
@@ -1584,10 +1585,16 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       super();
       this.attachShadow({ mode: "open" });
       this._sig = "";
+      this._rads = {}; // climate -> heating-radiator-card nascosta (serve solo per il suo popup)
+      this._pop = null; // popup con heating-planner-card o tado-quota-card
+    }
+
+    disconnectedCallback() {
+      this._closePop();
     }
 
     setConfig(config) {
-      this._config = { title: "Riscaldamento", navigation_path: "/tado-heating", show_planner: true, show_quota: true, ...(config || {}) };
+      this._config = { title: "Riscaldamento", show_planner: true, show_quota: true, ...(config || {}) };
       this._sig = "";
       this._quotaIds = null;
       this._build();
@@ -1609,7 +1616,6 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       return {
         schema: [
           { name: "title", selector: { text: {} } },
-          { name: "navigation_path", selector: { text: {} } },
           {
             type: "grid", name: "", flatten: true,
             schema: [
@@ -1620,8 +1626,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           { name: "exclude", selector: { entity: { domain: "climate", multiple: true } } },
         ],
         computeLabel: (s) =>
-          ({ title: "Titolo", navigation_path: "Plancia da aprire", show_planner: "Prossimo cambio", show_quota: "Quota Tado", exclude: "Stanze da non mostrare" }[s.name] || s.name),
-        computeHelper: (s) => (s.name === "navigation_path" ? "Vuoto: /tado-heating (la plancia creata da Tado Heating Manager)." : undefined),
+          ({ title: "Titolo", show_planner: "Prossimo cambio", show_quota: "Quota Tado", exclude: "Stanze da non mostrare" }[s.name] || s.name),
       };
     }
 
@@ -1650,6 +1655,8 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
 
     set hass(hass) {
       this._hass = hass;
+      Object.values(this._rads).forEach((el) => (el.hass = hass));
+      if (this._pop) this._pop.el.hass = hass;
       if (!this._config) return;
       if (!this._quotaIds || !this._quotaFromReg) this._quotaIds = this._resolveQuota();
       const ids = ["sensor.hp_all_rooms", "switch.hp_all_enabled", ...Object.values(this._quotaIds)];
@@ -1668,7 +1675,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         <style>
           :host { display: block; }
           ha-card {
-            position: relative; overflow: hidden; cursor: pointer; padding: 16px; border-radius: var(--ha-card-border-radius, 16px);
+            position: relative; overflow: hidden; padding: 16px; border-radius: var(--ha-card-border-radius, 16px);
             color: var(--primary-text-color); transition: background .6s ease;
           }
           ha-card::before {
@@ -1699,6 +1706,13 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .room.heating { background: rgba(255,122,40,.16); border-color: rgba(255,138,61,.6); }
           .room.auto { border-color: rgba(76,175,80,.55); }
           .room.off { opacity: .72; }
+          [data-room], [data-pop] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+          [data-room]:hover { background: rgba(128,128,128,.18); }
+          .room.heating[data-room]:hover { background: rgba(255,122,40,.22); }
+          [data-pop] { border-radius: 10px; margin: -4px -6px; padding: 4px 6px; transition: background .2s ease; }
+          [data-pop]:hover { background: rgba(128,128,128,.12); }
+          [data-room]:focus-visible, [data-pop]:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+          .rads { display: none; }
           .rtop { display: flex; align-items: center; gap: 6px; }
           .rname { font-size: 13px; font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .rflame { --mdc-icon-size: 16px; color: ${HS_ORANGE}; display: none; transform-origin: 50% 90%; }
@@ -1737,7 +1751,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           }
           @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
         </style>
-        <ha-card tabindex="0" role="button">
+        <ha-card>
           <div class="head">
             <div class="hicon"><ha-icon icon="mdi:fire"></ha-icon></div>
             <div class="htxt"><div class="title"></div><div class="sub"></div></div>
@@ -1745,18 +1759,95 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           </div>
           <div class="rooms"></div>
           <div class="foot"></div>
-        </ha-card>`;
+        </ha-card>
+        <div class="rads"></div>`;
       const $ = (q) => this.shadowRoot.querySelector(q);
-      this._el = { card: $("ha-card"), title: $(".title"), sub: $(".sub"), avg: $(".avg .v"), avgWrap: $(".avg"), rooms: $(".rooms"), foot: $(".foot") };
-      const go = () => {
-        const path = this._config.navigation_path || "/tado-heating";
-        window.history.pushState(null, "", path);
-        window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+      this._el = { card: $("ha-card"), title: $(".title"), sub: $(".sub"), avg: $(".avg .v"), avgWrap: $(".avg"), rooms: $(".rooms"), foot: $(".foot"), rads: $(".rads") };
+      // le card nascoste vecchie (setConfig rifatto) non servono piu'
+      Object.values(this._rads).forEach((el) => el.remove());
+      this._rads = {};
+      const go = (ev) => {
+        const room = ev.target.closest("[data-room]");
+        const pop = ev.target.closest("[data-pop]");
+        if (room) this._openRoom(room.dataset.room);
+        else if (pop) this._openPop(pop.dataset.pop);
+        else return false;
+        return true;
       };
       this._el.card.addEventListener("click", go);
       this._el.card.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(); }
+        if ((ev.key === "Enter" || ev.key === " ") && go(ev)) ev.preventDefault();
       });
+    }
+
+    // Popup della heating-radiator-card (grafico, modi, temperatura): card nascosta dentro questa, cosi' i suoi
+    // eventi (more-info) arrivano a HA.
+    _openRoom(climate) {
+      if (!this._hass || !climate) return;
+      let el = this._rads[climate];
+      if (!el) {
+        if (!customElements.get("heating-radiator-card")) return;
+        el = document.createElement("heating-radiator-card");
+        el.setConfig({ entity: climate });
+        this._el.rads.appendChild(el);
+        this._rads[climate] = el;
+      }
+      el.hass = this._hass;
+      el._openDialog();
+    }
+
+    // Popup con un'altra card del file (programmi o quota).
+    _openPop(kind) {
+      if (this._pop || !this._hass) return;
+      const tag = kind === "planner" ? "heating-planner-card" : "tado-quota-card";
+      if (!customElements.get(tag)) return;
+      const host = document.createElement("div");
+      const root = host.attachShadow({ mode: "open" });
+      root.innerHTML = `
+        <style>
+          .ov { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,.55);
+            display: flex; align-items: center; justify-content: center; padding: 12px; box-sizing: border-box; }
+          .dlg { position: relative; background: var(--card-background-color, #1c1c1c); color: var(--primary-text-color);
+            border-radius: 20px; width: min(${kind === "planner" ? 720 : 560}px, 100%); max-height: 100%; overflow-y: auto;
+            box-sizing: border-box; font-family: var(--paper-font-body1_-_font-family, inherit);
+            --ha-card-box-shadow: none; --ha-card-border-width: 0; }
+          .x { position: absolute; top: 8px; right: 8px; z-index: 1; width: 36px; height: 36px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; cursor: pointer; background: var(--card-background-color, #1c1c1c); }
+          .x:hover { background: rgba(128,128,128,.32); }
+          .body { padding-top: 4px; }
+        </style>
+        <div class="ov"><div class="dlg">
+          <div class="x" title="Chiudi"><ha-icon icon="mdi:close"></ha-icon></div>
+          <div class="body"></div>
+        </div></div>`;
+      const el = document.createElement(tag);
+      el.setConfig(kind === "planner" ? { title: this._config.title || "Riscaldamento" } : {});
+      el.hass = this._hass;
+      root.querySelector(".body").appendChild(el);
+      document.body.appendChild(host);
+      this._pop = { host, el };
+      root.querySelector(".ov").addEventListener("click", (ev) => {
+        if (ev.target.classList.contains("ov")) this._closePop();
+      });
+      root.querySelector(".x").addEventListener("click", () => this._closePop());
+      // il popup sta fuori da HA: il more-info lo rimanda questa card (e chiude il popup, che starebbe sopra)
+      host.addEventListener("hass-more-info", (ev) => {
+        ev.stopPropagation();
+        this._closePop();
+        this.dispatchEvent(new CustomEvent("hass-more-info", { detail: ev.detail, bubbles: true, composed: true }));
+      });
+      this._popKey = (ev) => ev.key === "Escape" && this._closePop();
+      this._popNav = () => this._closePop(); // es. "Aggiungi le stanze" del planner
+      document.addEventListener("keydown", this._popKey);
+      window.addEventListener("location-changed", this._popNav);
+    }
+
+    _closePop() {
+      if (!this._pop) return;
+      document.removeEventListener("keydown", this._popKey);
+      window.removeEventListener("location-changed", this._popNav);
+      this._pop.host.remove();
+      this._pop = null;
     }
 
     _room(r) {
@@ -1814,7 +1905,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
             const fan = x.fan
               ? `<span class="rfan ${x.fan === "on" ? "on" : ""}" title="Ventola ${x.fan === "on" ? "accesa" : x.fan === "off" ? "spenta" : "non disponibile"}"><ha-icon icon="${x.fan === "bad" ? "mdi:fan-off" : "mdi:fan"}"></ha-icon></span>`
               : "";
-            return `<div class="${cls}">
+            return `<div class="${cls}" data-room="${hsEsc(x.r.climate)}" tabindex="0" role="button">
                 <div class="rtop"><div class="rname">${hsEsc(x.r.name)}</div>${fan}<ha-icon class="rflame" icon="mdi:fire"></ha-icon></div>
                 <div class="rtemp">${hsTemp(x.temp)}°${x.valve !== null ? `<span class="rv" title="Temperatura della valvola">V ${hsTemp(x.valve)}°</span>` : ""}</div>
                 <div class="rsub"><span>${hsEsc(sub)}</span>${x.offset !== null ? `<span class="roff" title="Offset della valvola">Δ ${x.offset > 0 ? "+" : ""}${x.offset.toFixed(1)}°</span>` : ""}</div>
@@ -1842,7 +1933,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           ? groups.slice(0, MAX).map((g) => `<div class="ch"><span class="w">${hsEsc(g.label)}</span><span class="a">${g.items.join(", ")}</span></div>`)
           : [];
         if (hubOn && groups.length > MAX) rows.push(`<div class="ch"><span class="w"></span><span class="a">e altri ${groups.length - MAX} orari…</span></div>`);
-        foot.push(`<div class="plan"><div class="line"><ha-icon icon="mdi:calendar-clock"></ha-icon><span class="t">${head}</span>
+        foot.push(`<div class="plan" data-pop="planner" tabindex="0" role="button"><div class="line"><ha-icon icon="mdi:calendar-clock"></ha-icon><span class="t">${head}</span>
           <span class="pill ${hubOn ? "on" : ""}">${hubOn ? "Programmi attivi" : "Programmi spenti"}</span></div>${rows.join("")}</div>`);
       }
       if (this._config.show_quota) {
@@ -1854,7 +1945,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           const rem = hsNum(q("quota_remaining") && q("quota_remaining").state);
           const reset = q("quota_reset") ? hsTime(q("quota_reset").state) : "";
           const parts = [rem !== null ? `${rem} residue` : "", reset ? `reset ${reset}` : ""].filter(Boolean).join(" · ");
-          foot.push(`<div class="line"><ha-icon icon="mdi:api" style="color:${color}"></ha-icon>
+          foot.push(`<div class="line" data-pop="quota" tabindex="0" role="button"><ha-icon icon="mdi:api" style="color:${color}"></ha-icon>
             <div class="q"><div style="display:flex;gap:8px"><span class="t">Quota Tado <b>${pct.toFixed(0)}%</b></span><span>${hsEsc(parts)}</span></div>
             <div class="bar"><div style="width:${Math.min(100, Math.max(0, pct))}%;background:${color}"></div></div></div></div>`);
         }
@@ -1870,7 +1961,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   window.customCards.push({
     type: "heating-summary-card",
     name: "Heating Summary",
-    description: "Riepilogo del riscaldamento per la Home: termosifoni, programmi e quota. Un tocco apre la plancia.",
+    description: "Riepilogo del riscaldamento per la Home: termosifoni, programmi e quota, ognuno con il suo popup.",
     preview: true,
   });
 }

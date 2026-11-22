@@ -13,7 +13,7 @@ tools/bump_resource.py               aggiorna ?v= della risorsa Lovelace (instal
 Il file contiene otto card, ognuna dentro un blocco `{ ... }` (le costanti non si scontrano):
 `heating-planner-card` (HP_*), `heating-radiator-card` (HR_*), `heating-radiators-card` (una `heating-radiator-card`
 per stanza di `sensor.hp_all_rooms`; entrambe con `layout: tile` = blocchi come le tessere del riepilogo, `_buildTile`/`_updateTile`, griglia `columns: 4`; `heating-radiators-card` ha `columns: 2|3` per i blocchi, predefinito automatico), `heating-summary-card` (HS_*, riepilogo per la Home: tessere delle stanze,
-prossimo cambio, quota trovata come nella card della quota; al tocco `navigation_path`, predefinito `/tado-heating`), `heating-ac-card` (AC_*), `heating-acs-card` (una `heating-ac-card` per climatizzatore: `entities` o, se vuoto, i climate con
+prossimo cambio, quota trovata come nella card della quota; dalla 2.16.0 niente `navigation_path`: tocco su una stanza = popup di una `heating-radiator-card` nascosta nella card (`_rads`, cosi' il more-info arriva a HA), su programmi/quota = popup generico (`_openPop`) con `heating-planner-card`/`tado-quota-card`, more-info rimandato dalla summary), `heating-ac-card` (AC_*), `heating-acs-card` (una `heating-ac-card` per climatizzatore: `entities` o, se vuoto, i climate con
 `cool`/`dry`/`fan_only` non nascosti, per nome; `layout`, `columns`, `order`, `exclude`, `names` come `heating-radiators-card`;
 lista, colonne e ordine (`order`: questi per primi, solo nella card) condivisi in `THM_LIST_CSS`/`THM_COLUMNS_SELECTOR`/`thmColumns`/`thmOrder`), `tado-quota-card` (TQ_*).
 Editor visuale: `static getConfigForm()` (schema `ha-form` disegnato da HA, nessun elemento editor) su tutte.
