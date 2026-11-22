@@ -15,7 +15,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.20.0";
+const THM_CARDS_VERSION = "2.20.1";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1702,7 +1702,8 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           }
           ha-card::before {
             content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .6s ease;
-            background: radial-gradient(120% 90% at 0% 0%, rgba(255,138,61,.28), rgba(255,138,61,0) 60%);
+            /* in heating: alone che scende dal bordo alto della card */
+            background: radial-gradient(130% 70% at 50% 0%, rgba(255,138,61,.30), rgba(255,138,61,0) 70%);
           }
           ha-card.warm::before { opacity: 1; }
           .head { position: relative; display: flex; align-items: center; gap: 12px; }
@@ -1726,12 +1727,12 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
             min-width: 0; transition: all .4s ease;
           }
           .room.on { border-color: rgba(255,138,61,.35); }
-          .room.heating { background: rgba(255,122,40,.16); border-color: rgba(255,138,61,.6); }
+          /* in heating: alone dal bordo inferiore, come la heating-radiator-card */
+          .room.heating { background-image: radial-gradient(120% 100% at 50% 100%, rgba(255,122,40,.38), rgba(255,122,40,0) 70%); border-color: rgba(255,138,61,.6); }
           .room.auto { border-color: rgba(76,175,80,.55); }
           .room.off { opacity: .72; }
           [data-room], [data-pop] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
-          [data-room]:hover { background: rgba(128,128,128,.18); }
-          .room.heating[data-room]:hover { background: rgba(255,122,40,.22); }
+          [data-room]:hover { background-color: rgba(128,128,128,.18); }
           [data-pop] { border-radius: 10px; margin: -4px -6px; padding: 4px 6px; transition: background .2s ease; }
           [data-pop]:hover { background: rgba(128,128,128,.12); }
           [data-room]:focus-visible, [data-pop]:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
