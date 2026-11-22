@@ -1,10 +1,11 @@
 /* Tado Heating Manager Cards
  * Card Lovelace per l'integrazione Tado Heating Manager (custom_components/tado_heating_manager).
- * Un solo file con otto card, senza dipendenze e senza build:
+ * Un solo file con nove card, senza dipendenze e senza build:
  *   custom:heating-planner-card    programmi a fasce di tutte le stanze (Feriali / Weekend)
  *   custom:heating-radiator-card   riga (o blocco, layout: tile) di un termosifone
  *   custom:heating-radiators-card  una riga per ogni termosifone di Tado Heating Manager
  *   custom:heating-summary-card    riepilogo per la Home (termosifoni, programmi, quota); al tocco apre i popup
+ *   custom:heating-summary-editable-card  come heating-summary-card, con +/- e modalita' in ogni riquadro
  *   custom:heating-ac-card         riga (o blocco, layout: tile) di un climatizzatore
  *   custom:heating-acs-card        una riga (o un blocco) per ogni climatizzatore, trovati da soli
  *   custom:heating-usage-card      ore di riscaldamento / valvola chiusa per stanza (oggi, ieri, 7 e 30 giorni)
@@ -14,7 +15,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.18.0";
+const THM_CARDS_VERSION = "2.19.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1946,6 +1947,20 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       return { r, c, temp, valve, offset, bad, off, heating, target, next, fan, auto: !off && c.state === "auto" };
     }
 
+    // riquadro di una stanza (la versione modificabile lo allunga)
+    _tileHtml(x) {
+      const cls = ["room", x.off ? "off" : "on", x.heating ? "heating" : "", x.auto ? "auto" : ""].join(" ");
+      const sub = x.bad ? "n.d." : x.off ? "spento" : x.target !== null ? `→ ${x.target.toFixed(1)}°` : "acceso";
+      const fan = x.fan
+        ? `<span class="rfan ${x.fan === "on" ? "on" : ""}" title="Ventola ${x.fan === "on" ? "accesa" : x.fan === "off" ? "spenta" : "non disponibile"}"><ha-icon icon="${x.fan === "bad" ? "mdi:fan-off" : "mdi:fan"}"></ha-icon></span>`
+        : "";
+      return `<div class="${cls}" data-room="${hsEsc(x.r.climate)}" tabindex="0" role="button">
+          <div class="rtop"><div class="rname">${hsEsc(x.r.name)}</div>${fan}<ha-icon class="rflame" icon="mdi:fire"></ha-icon></div>
+          <div class="rtemp">${hsTemp(x.temp)}°${x.valve !== null ? `<span class="rv" title="Temperatura della valvola">V ${hsTemp(x.valve)}°</span>` : ""}</div>
+          <div class="rsub"><span>${hsEsc(sub)}</span>${x.offset !== null ? `<span class="roff" title="Offset della valvola">Δ ${x.offset > 0 ? "+" : ""}${x.offset.toFixed(1)}°</span>` : ""}</div>
+        </div>`;
+    }
+
     _update() {
       if (!this._el || !this._hass) return;
       const e = this._el;
@@ -1973,18 +1988,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       e.avg.innerHTML = avg === null ? "" : `${avg.toFixed(1)}<small>°</small>`;
 
       e.rooms.innerHTML = rooms.length
-        ? rooms.map((x) => {
-            const cls = ["room", x.off ? "off" : "on", x.heating ? "heating" : "", x.auto ? "auto" : ""].join(" ");
-            const sub = x.bad ? "n.d." : x.off ? "spento" : x.target !== null ? `→ ${x.target.toFixed(1)}°` : "acceso";
-            const fan = x.fan
-              ? `<span class="rfan ${x.fan === "on" ? "on" : ""}" title="Ventola ${x.fan === "on" ? "accesa" : x.fan === "off" ? "spenta" : "non disponibile"}"><ha-icon icon="${x.fan === "bad" ? "mdi:fan-off" : "mdi:fan"}"></ha-icon></span>`
-              : "";
-            return `<div class="${cls}" data-room="${hsEsc(x.r.climate)}" tabindex="0" role="button">
-                <div class="rtop"><div class="rname">${hsEsc(x.r.name)}</div>${fan}<ha-icon class="rflame" icon="mdi:fire"></ha-icon></div>
-                <div class="rtemp">${hsTemp(x.temp)}°${x.valve !== null ? `<span class="rv" title="Temperatura della valvola">V ${hsTemp(x.valve)}°</span>` : ""}</div>
-                <div class="rsub"><span>${hsEsc(sub)}</span>${x.offset !== null ? `<span class="roff" title="Offset della valvola">Δ ${x.offset > 0 ? "+" : ""}${x.offset.toFixed(1)}°</span>` : ""}</div>
-              </div>`;
-          }).join("")
+        ? rooms.map((x) => this._tileHtml(x)).join("")
         : `<div class="empty">Aggiungi le stanze in Tado Heating Manager.</div>`;
 
       const foot = [];
@@ -2036,6 +2040,178 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
     type: "heating-summary-card",
     name: "Heating Summary",
     description: "Riepilogo del riscaldamento per la Home: termosifoni, programmi e quota, ognuno con il suo popup.",
+    preview: true,
+  });
+
+  /* Heating Summary Editable card: come heating-summary-card, ma ogni riquadro ha -/+ della temperatura e i modi
+   * (Caldo / Auto / Spento). Toccando il resto del riquadro si apre il popup del termosifone.
+   * Uso:  type: custom:heating-summary-editable-card   (stesse opzioni; columns predefinito 2)
+   * I tocchi su -/+ si sommano: una sola climate.set_temperature dopo HSE_DEBOUNCE ms di pausa (meno chiamate Tado).
+   */
+  const HSE_ORDER = ["heat", "auto", "off"];
+  const HSE_MODE = {
+    heat: { icon: "mdi:fire", label: "Caldo", color: HS_ORANGE },
+    auto: { icon: "mdi:calendar-clock", label: "Auto", color: HS_GREEN },
+    off: { icon: "mdi:power", label: "Spento", color: "var(--primary-text-color)" },
+  };
+  const HSE_DEBOUNCE = 900;
+  const HSE_HOLD = 10000; // valore scelto mostrato finche' HA non lo conferma (al massimo 10 s)
+  const hseClamp = (v) => Math.min(25, Math.max(5, Math.round(v * 2) / 2));
+
+  class HeatingSummaryEditableCard extends HeatingSummaryCard {
+    constructor() {
+      super();
+      this._pend = {}; // climate -> { v, on, timer, sent }
+    }
+
+    setConfig(config) {
+      super.setConfig({ columns: 2, ...(config || {}) });
+    }
+
+    getCardSize() {
+      return 6;
+    }
+
+    _build() {
+      super._build();
+      const style = document.createElement("style");
+      style.textContent = `
+          .ctl { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+          .ctl .tv { flex: 1; min-width: 0; text-align: center; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .ctl .tv.pend { color: var(--primary-color); }
+          .room.off .ctl .tv { font-weight: 400; color: var(--secondary-text-color); }
+          .b { flex: none; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+            background: rgba(128,128,128,.2); cursor: pointer; --mdc-icon-size: 18px; user-select: none; transition: background .15s ease; }
+          .b:hover { background: rgba(128,128,128,.34); }
+          .b:active { transform: scale(.92); }
+          .b:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+          .modes { display: flex; gap: 4px; margin-top: 6px; justify-content: space-between; }
+          .modes .b { flex: 1; width: auto; min-width: 0; border-radius: 14px; --mdc-icon-size: 17px; color: var(--secondary-text-color); }
+          .modes .b.on { color: #fff; }
+          .modes .b.on.heat { background: ${HS_ORANGE}; }
+          .modes .b.on.auto { background: ${HS_GREEN}; }
+          .modes .b.on.off { background: rgba(128,128,128,.55); }
+          .room.off { opacity: 1; }
+          .room.off .rtop, .room.off .rtemp, .room.off .rsub { opacity: .72; }
+          .rsub .tv2 { display: none; }
+          .rsub .tv2.pend { color: var(--primary-color); }
+          /* 3 colonne: il valore va nel sottotitolo, -/+ ai lati */
+          .rooms.c3 .room { padding: 10px 8px; }
+          .rooms.c3 .rsub .tv2 { display: inline; }
+          .rooms.c3 .ctl .tv { display: none; }
+          .rooms.c3 .ctl { justify-content: space-between; }
+          .rooms.c3 .modes { gap: 3px; }`;
+      this.shadowRoot.appendChild(style);
+      // i tasti vengono prima del tocco sul riquadro (fase di cattura: il popup non si apre)
+      const act = (ev) => {
+        const b = ev.target.closest("[data-act]");
+        if (!b) return false;
+        ev.stopPropagation();
+        ev.preventDefault();
+        if (b.dataset.act === "mode") this._setMode(b.dataset.c, b.dataset.m);
+        else this._step(b.dataset.c, b.dataset.act === "plus" ? 0.5 : -0.5);
+        return true;
+      };
+      this._el.card.addEventListener("click", act, true);
+      this._el.card.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") act(ev);
+      }, true);
+    }
+
+    _tileHtml(x) {
+      const id = x.r.climate;
+      const p = this._pend[id];
+      if (p && p.sent && !x.off && x.target === p.v) this._dropPend(id); // HA ha confermato
+      const pend = this._pend[id];
+      const html = super._tileHtml(x);
+      const e = hsEsc(id);
+      const val = pend ? `${pend.v.toFixed(1)}°` : x.bad ? "n.d." : x.off ? "Spento" : x.target !== null ? `${x.target.toFixed(1)}°` : "--";
+      const modes = x.c && Array.isArray(x.c.attributes.hvac_modes) ? HSE_ORDER.filter((m) => x.c.attributes.hvac_modes.includes(m)) : HSE_ORDER;
+      const cur = x.c ? x.c.state : "";
+      const ctl = `
+                <div class="ctl">
+                  <div class="b" data-act="minus" data-c="${e}" role="button" tabindex="0" title="Meno 0,5°"><ha-icon icon="mdi:minus"></ha-icon></div>
+                  <span class="tv${pend ? " pend" : ""}">${val}</span>
+                  <div class="b" data-act="plus" data-c="${e}" role="button" tabindex="0" title="Più 0,5°"><ha-icon icon="mdi:plus"></ha-icon></div>
+                </div>
+                <div class="modes">${modes.map((m) => `<div class="b ${m}${cur === m ? " on" : ""}" data-act="mode" data-m="${m}" data-c="${e}" role="button" tabindex="0" title="${HSE_MODE[m].label}"><ha-icon icon="${HSE_MODE[m].icon}"></ha-icon></div>`).join("")}</div>`;
+      // l'obiettivo sta gia' nei tasti: nel sottotitolo resta solo l'offset
+      return html
+        .replace(/<div class="rsub"><span>[^<]*<\/span>/, `<div class="rsub"><span>${x.bad ? "n.d." : ""}<span class="tv2${pend ? " pend" : ""}">${x.bad ? "" : pend ? val : x.off ? "spento" : `→ ${val}`}</span></span>`)
+        .replace(/<\/div>\s*$/, `${ctl}\n              </div>`);
+    }
+
+    _step(id, d) {
+      const c = this._st(id);
+      if (!c || c.state === "unavailable" || c.state === "unknown") return;
+      const room = this._rooms().find((r) => r.climate === id);
+      const x = room ? this._room(room) : null;
+      let p = this._pend[id];
+      if (p && p.sent) { this._dropPend(id); p = null; }
+      let base;
+      if (p) base = p.v;
+      else if (c.state === "off") {
+        // da spento il target di Tado (5 °C) non conta: si parte dalla temperatura della stanza e si accende
+        base = Math.round((x && x.temp !== null ? x.temp : Number(c.attributes.current_temperature ?? 20)) * 2) / 2;
+      } else base = Number(c.attributes.temperature ?? c.attributes.current_temperature ?? 20);
+      const v = hseClamp(base + d);
+      p = this._pend[id] = { v, on: p ? p.on : c.state === "off", timer: p && p.timer, sent: false };
+      clearTimeout(p.timer);
+      p.timer = setTimeout(() => this._send(id), HSE_DEBOUNCE);
+      this._refresh();
+    }
+
+    _send(id) {
+      const p = this._pend[id];
+      if (!p || !this._hass) return;
+      const data = { entity_id: id, temperature: p.v };
+      if (p.on) data.hvac_mode = "heat";
+      this._hass.callService("climate", "set_temperature", data);
+      p.sent = true;
+      p.timer = setTimeout(() => { this._dropPend(id); this._refresh(); }, HSE_HOLD);
+    }
+
+    _dropPend(id) {
+      const p = this._pend[id];
+      if (p) clearTimeout(p.timer);
+      delete this._pend[id];
+    }
+
+    _setMode(id, mode) {
+      const c = this._st(id);
+      if (!c || !this._hass) return;
+      const p = this._pend[id];
+      if (p && !p.sent) {
+        // temperatura scelta e non ancora mandata: con "Caldo" va insieme, altrimenti si scarta
+        this._dropPend(id);
+        if (mode === "heat") {
+          this._hass.callService("climate", "set_temperature", { entity_id: id, temperature: p.v, hvac_mode: "heat" });
+          return;
+        }
+      }
+      if (c.state === mode) return;
+      this._hass.callService("climate", "set_hvac_mode", { entity_id: id, hvac_mode: mode });
+    }
+
+    _refresh() {
+      this._sig = "";
+      this._update();
+    }
+
+    _update() {
+      super._update();
+      if (this._el) this._el.rooms.classList.toggle("c3", thmColumns(this._config.columns) !== 2);
+    }
+  }
+
+  if (!customElements.get("heating-summary-editable-card")) {
+    customElements.define("heating-summary-editable-card", HeatingSummaryEditableCard);
+  }
+  window.customCards.push({
+    type: "heating-summary-editable-card",
+    name: "Heating Summary (modificabile)",
+    description: "Come Heating Summary, con +/- della temperatura e modalità in ogni riquadro.",
     preview: true,
   });
 }
