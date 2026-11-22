@@ -15,7 +15,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.24.0";
+const THM_CARDS_VERSION = "2.25.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1587,10 +1587,10 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   // tasti in fondo: lo stato del pulsante e' l'ora dell'ultima pressione
   const HS_ACTIONS = [
     // short = etichetta sul tasto (tre in una riga), name = nome intero (suggerimento); rgb = colore del tasto
-    { id: "button.hp_all_preheat", name: "Riscalda prima di rientrare", short: "Preriscalda", icon: "mdi:home-thermometer", rgb: "38,166,154" },
-    { id: "button.hp_all_boost", name: "Boost", short: "Boost", icon: "mdi:radiator", rgb: "255,138,61", active: HS_BOOST_ACTIVE, super: false },
+    { id: "button.hp_all_preheat", name: "Riscalda prima di rientrare", short: "Preriscalda", icon: "mdi:home-thermometer", rgb: "38,166,154", anim: "bob" },
+    { id: "button.hp_all_boost", name: "Boost", short: "Boost", icon: "mdi:radiator", rgb: "255,138,61", anim: "heat", active: HS_BOOST_ACTIVE, super: false },
     // super boost: anche i condizionatori; solo se l'integrazione ne ha (attributo climates del pulsante)
-    { id: "button.hp_all_super_boost", name: "Super boost (termosifoni e condizionatori)", short: "Super boost", icon: "mdi:rocket-launch", rgb: "171,71,188", active: HS_BOOST_ACTIVE, super: true, needsClimates: true },
+    { id: "button.hp_all_super_boost", name: "Super boost (termosifoni e condizionatori)", short: "Super boost", icon: "mdi:rocket-launch", rgb: "171,71,188", anim: "rocket", active: HS_BOOST_ACTIVE, super: true, needsClimates: true },
   ];
   const HS_RTF = typeof Intl !== "undefined" && Intl.RelativeTimeFormat ? new Intl.RelativeTimeFormat("it", { numeric: "auto" }) : null;
   // "5 giorni fa", "2 ore fa", "ieri"
@@ -1818,6 +1818,19 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .act.on .ic { background: rgb(var(--c)); color: #fff; box-shadow: 0 0 0 4px rgba(var(--c), .18); animation: hs-pulse 1.8s ease-in-out infinite; }
           .act.on .w { color: rgb(var(--c)); font-weight: 600; }
           .act.sent .ic { background: rgb(var(--c)); color: #fff; }
+          /* icona animata quando il tasto e' acceso: termosifone che "scalda", razzo che vibra in partenza */
+          .act.on .ic ha-icon { display: inline-flex; }
+          .act.on.a-heat .ic ha-icon { animation: hs-flicker 1s ease-in-out infinite; transform-origin: 50% 90%; }
+          .act.on.a-rocket .ic ha-icon { animation: hs-rocket .9s ease-in-out infinite; }
+          .act.on.a-bob .ic ha-icon { animation: hs-bob 1.6s ease-in-out infinite; }
+          @keyframes hs-rocket {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            20% { transform: translate(-1px, 1px) rotate(-4deg); }
+            40% { transform: translate(1px, -2px) rotate(3deg); }
+            60% { transform: translate(-1px, -1px) rotate(-2deg); }
+            80% { transform: translate(1px, 1px) rotate(2deg); }
+          }
+          @keyframes hs-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
           @keyframes hs-pulse { 0%, 100% { box-shadow: 0 0 0 3px rgba(var(--c), .18); } 50% { box-shadow: 0 0 0 7px rgba(var(--c), .06); } }
           .empty { position: relative; margin-top: 12px; font-size: 13px; color: var(--secondary-text-color); }
           @keyframes hs-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -2103,7 +2116,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           const on = !!act && act.state === "on" && !!act.attributes.super === a.super;
           const until = on ? hsTime(act.attributes.until) : "";
           const when = on ? (until ? `fino alle ${until}` : "attivo") : st.state === "unavailable" ? "non disponibile" : hsAgo(st.state);
-          return `<div class="act${on ? " on" : ""}" style="--c:${a.rgb}" data-press="${hsEsc(a.id)}"${on ? ' data-stop="1"' : ""} role="button" tabindex="0" title="${hsEsc(a.name)} · ${hsEsc(when)}${on ? " · tocca per fermare" : ""}">
+          return `<div class="act${on ? " on" : ""} a-${a.anim}" style="--c:${a.rgb}" data-press="${hsEsc(a.id)}"${on ? ' data-stop="1"' : ""} role="button" tabindex="0" title="${hsEsc(a.name)} · ${hsEsc(when)}${on ? " · tocca per fermare" : ""}">
               <div class="ic"><ha-icon icon="${hsEsc(st.attributes.icon || a.icon)}"></ha-icon></div>
               <div class="n">${hsEsc(a.short)}</div><div class="w">${hsEsc(when)}</div></div>`;
         });
