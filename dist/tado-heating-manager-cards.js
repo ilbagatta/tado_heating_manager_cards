@@ -15,7 +15,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.25.0";
+const THM_CARDS_VERSION = "2.26.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1556,6 +1556,8 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
    *       show_quota: true               # facoltativo: barra della quota Tado (se ci sono i sensori)
    *       show_turn_off: true            # facoltativo: tasto "spegni tutti" (button.hp_all_turn_off, due tocchi)
    *       show_actions: true             # facoltativo: tasti "Riscalda prima di rientrare", "Boost" e "Super boost"
+   *                                      # (con il tasto in basso a destra la card si gira: stanze e condizionatori
+   *                                      #  di boost e super boost, servizio set_boost_targets)
    *       exclude: [climate.xxx]         # facoltativo
    */
   const HS_ORANGE = "#ff8a3d";
@@ -1617,6 +1619,19 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .offb.armed { background: ${"#e53935"}; color: #fff; padding: 0 12px 0 9px; }
           .offb.dis { opacity: .4; cursor: default; pointer-events: none; }
           .offb:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }`;
+  // retro della card: stanze e condizionatori di boost e super boost
+  const HS_BOOST_ID = "button.hp_all_boost";
+  const HS_SUPER_ID = "button.hp_all_super_boost";
+  const HS_PICK_HOLD = 10000; // scelta mostrata finche' HA la conferma (al massimo 10 s)
+  const HS_AC_MODES = ["cool", "dry", "fan_only"];
+  // temperature sul retro: campo del servizio -> pulsante, attributo, limiti (come le opzioni dell'integrazione)
+  const HS_TEMPS = {
+    boost_temperature: { id: "button.hp_all_boost", attr: "temperature", min: 5, max: 25 },
+    super_boost_temperature: { id: "button.hp_all_super_boost", attr: "temperature", min: 5, max: 25 },
+    super_boost_ac_temperature: { id: "button.hp_all_super_boost", attr: "ac_temperature", min: 16, max: 30 },
+    super_boost_ac_temperature_after: { id: "button.hp_all_super_boost", attr: "ac_temperature_after", min: 16, max: 30 },
+  };
+  const HS_TEMP_DEBOUNCE = 900; // i tocchi su -/+ si sommano: una chiamata dopo la pausa
   const hsShortValue = (v) => (!v ? "" : v === "Spento" ? "spento" : String(v).replace(" °C", "°"));
 
   class HeatingSummaryCard extends HTMLElement {
@@ -1627,6 +1642,9 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       this._rads = {}; // climate -> heating-radiator-card nascosta (serve solo per il suo popup)
       this._pop = null; // popup con heating-planner-card o tado-quota-card
       this._offOn = 0; // termosifoni accesi (per abilitare "spegni tutti")
+      this._flipped = false; // retro: stanze e condizionatori del boost
+      this._pick = {}; // boost|super|acs -> { list, t } scelta inviata, non ancora confermata
+      this._tpend = {}; // campo della temperatura -> { v, t, timer } valore scelto, non ancora confermato
     }
 
     connectedCallback() {
@@ -1833,6 +1851,46 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           @keyframes hs-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
           @keyframes hs-pulse { 0%, 100% { box-shadow: 0 0 0 3px rgba(var(--c), .18); } 50% { box-shadow: 0 0 0 7px rgba(var(--c), .06); } }
           .empty { position: relative; margin-top: 12px; font-size: 13px; color: var(--secondary-text-color); }
+          /* tasto in basso a destra: gira la card (retro = stanze e condizionatori del boost) */
+          .fliprow { position: relative; display: flex; justify-content: flex-end; margin: 6px -8px -10px 0; }
+          .fliprow[hidden] { display: none; }
+          .flipb { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; color: var(--secondary-text-color); --mdc-icon-size: 18px; -webkit-tap-highlight-color: transparent;
+            transition: background .2s ease, color .2s ease; }
+          .flipb:hover { background: rgba(128,128,128,.16); color: var(--primary-text-color); }
+          .flipb:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+          ha-card.flipped .flipb { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+          .back { display: none; position: relative; }
+          ha-card.flipped .back { display: block; }
+          ha-card.flipped::before, ha-card.flipped > .head, ha-card.flipped > .rooms, ha-card.flipped > .foot { display: none; }
+          .bsec { margin-top: 14px; }
+          .bt { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+          .bt ha-icon { --mdc-icon-size: 18px; color: rgb(var(--c)); flex: none; }
+          .bt .cnt { margin-left: auto; font-size: 11.5px; font-weight: 500; color: var(--secondary-text-color); }
+          .chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+          .chip { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 8px 10px; border-radius: 12px; cursor: pointer;
+            background: rgba(128,128,128,.10); border: 1.5px solid transparent; font-size: 12.5px; color: var(--secondary-text-color);
+            -webkit-tap-highlight-color: transparent; user-select: none; transition: all .2s ease; }
+          .chip span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .chip ha-icon { --mdc-icon-size: 18px; flex: none; display: inline-flex; }
+          .chip:hover { background: rgba(128,128,128,.16); }
+          .chip:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+          .chip.on { border-color: rgba(var(--c), .6); background: rgba(var(--c), .14); color: var(--primary-text-color); font-weight: 600; }
+          .chip.on ha-icon { color: rgb(var(--c)); }
+          .chip.wait { opacity: .65; }
+          .trow { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12.5px; color: var(--secondary-text-color); }
+          .trow > span { flex: 1; min-width: 0; }
+          .stp { display: flex; align-items: center; gap: 4px; flex: none; }
+          .stp b { min-width: 52px; text-align: center; font-size: 15px; font-weight: 600; color: var(--primary-text-color);
+            font-variant-numeric: tabular-nums; }
+          .stp b.wait { color: rgb(var(--c)); }
+          .sb { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer;
+            background: rgba(var(--c), .16); color: rgb(var(--c)); --mdc-icon-size: 18px; user-select: none;
+            -webkit-tap-highlight-color: transparent; transition: background .2s ease; }
+          .sb:hover { background: rgba(var(--c), .28); }
+          .sb:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+          .sb.dis { opacity: .35; pointer-events: none; }
+          .bnote { font-size: 11.5px; color: var(--secondary-text-color); margin-top: 6px; }
           @keyframes hs-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
           @keyframes hs-flicker {
             0%, 100% { transform: scale(1, 1) rotate(0deg); }
@@ -1851,10 +1909,14 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           </div>
           <div class="rooms"></div>
           <div class="foot"></div>
+          <div class="back"></div>
+          <div class="fliprow" hidden><div class="flipb" data-flip role="button" tabindex="0"><ha-icon></ha-icon></div></div>
         </ha-card>
         <div class="rads"></div>`;
       const $ = (q) => this.shadowRoot.querySelector(q);
-      this._el = { card: $("ha-card"), title: $(".title"), sub: $(".sub"), avg: $(".avg .v"), avgWrap: $(".avg"), rooms: $(".rooms"), foot: $(".foot"), rads: $(".rads"), off: $(".offb") };
+      this._el = { card: $("ha-card"), title: $(".title"), sub: $(".sub"), avg: $(".avg .v"), avgWrap: $(".avg"), rooms: $(".rooms"), foot: $(".foot"), rads: $(".rads"), off: $(".offb"), back: $(".back"), flipRow: $(".fliprow"), flip: $(".flipb") };
+      this._flipped = false;
+      this._pick = {};
       // le card nascoste vecchie (setConfig rifatto) non servono piu'
       Object.values(this._rads).forEach((el) => el.remove());
       this._rads = {};
@@ -1863,7 +1925,13 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         const pop = ev.target.closest("[data-pop]");
         const off = ev.target.closest("[data-off]");
         const press = ev.target.closest("[data-press]");
-        if (off) this._offTap(off);
+        const flip = ev.target.closest("[data-flip]");
+        const pick = ev.target.closest("[data-pick]");
+        const temp = ev.target.closest("[data-temp]");
+        if (flip) this._flip();
+        else if (temp) this._tempTap(temp.dataset.temp, Number(temp.dataset.d));
+        else if (pick) this._pickTap(pick.dataset.pick, pick.dataset.id);
+        else if (off) this._offTap(off);
         else if (press) this._press(press);
         else if (room) this._openRoom(room.dataset.room);
         else if (pop) this._openPop(pop.dataset.pop);
@@ -1884,6 +1952,163 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       else this._hass.callService("button", "press", { entity_id: el.dataset.press });
       el.classList.add("sent");
       setTimeout(() => el.classList.remove("sent"), 700);
+    }
+
+    // Gira la card (mezzo giro, cambio faccia, mezzo giro); l'altezza resta quella del fronte se il retro e' piu' basso
+    _flip() {
+      const card = this._el.card;
+      const swap = () => {
+        if (!this._flipped) card.style.minHeight = `${card.offsetHeight}px`;
+        else card.style.minHeight = "";
+        this._flipped = !this._flipped;
+        card.classList.toggle("flipped", this._flipped);
+        this._update();
+      };
+      const still = !card.animate || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      if (still) return swap();
+      if (this._flipping) return;
+      this._flipping = true;
+      // cambio faccia con un timer e non con animation.finished: se l'animazione non gira (scheda in background)
+      // la card non resta girata a meta'
+      const half = (from, to, easing) =>
+        card.animate([{ transform: `perspective(1200px) rotateY(${from}deg)` }, { transform: `perspective(1200px) rotateY(${to}deg)` }], { duration: 170, easing, fill: "none" });
+      const first = half(0, 90, "ease-in");
+      setTimeout(() => {
+        first.cancel();
+        swap();
+        const second = half(-90, 0, "ease-out");
+        setTimeout(() => { second.cancel(); this._flipping = false; }, 200);
+      }, 170);
+    }
+
+    // scelta di boost (stanze), super boost (stanze) e condizionatori: quella confermata da HA, o quella appena inviata
+    _picked(kind) {
+      const b = this._st(HS_BOOST_ID);
+      const sb = this._st(HS_SUPER_ID);
+      const attr = kind === "boost" ? b && b.attributes.rooms : kind === "super" ? sb && sb.attributes.rooms : sb && sb.attributes.climates;
+      const server = Array.isArray(attr) ? attr : [];
+      const p = this._pick[kind];
+      if (p) {
+        const same = p.list.length === server.length && p.list.every((x) => server.includes(x));
+        if (same || Date.now() - p.t > HS_PICK_HOLD) delete this._pick[kind];
+        else return { list: p.list, wait: true };
+      }
+      return { list: server, wait: false };
+    }
+
+    // condizionatori proponibili: caldo + un modo da condizionatore, non termostati delle stanze, non nascosti; piu' i gia' scelti
+    _acCandidates(rooms, chosen) {
+      const used = new Set();
+      rooms.forEach((r) => [r.climate, r.valve].forEach((id) => id && used.add(id)));
+      const reg = this._hass.entities || {};
+      const out = Object.values(this._hass.states).filter((s) => {
+        if (!s.entity_id.startsWith("climate.") || used.has(s.entity_id)) return false;
+        if (reg[s.entity_id] && reg[s.entity_id].hidden) return false;
+        const modes = s.attributes.hvac_modes || [];
+        return modes.includes("heat") && modes.some((m) => HS_AC_MODES.includes(m));
+      }).map((s) => s.entity_id);
+      chosen.forEach((id) => !out.includes(id) && out.push(id));
+      const name = (id) => { const s = this._st(id); return String((s && s.attributes.friendly_name) || id); };
+      return out.map((id) => ({ id, name: name(id) })).sort((a, b) => a.name.localeCompare(b.name, "it"));
+    }
+
+    _pickTap(kind, id) {
+      if (!this._hass) return;
+      const cur = this._picked(kind).list;
+      const set = new Set(cur);
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+      // ordine: quello delle stanze / dei condizionatori proposti
+      const st = this._st("sensor.hp_all_rooms");
+      const rooms = (st && st.attributes.rooms) || [];
+      const order = kind === "acs" ? this._acCandidates(rooms, [...set]).map((x) => x.id) : rooms.map((r) => r.slug);
+      const list = order.filter((x) => set.has(x));
+      this._pick[kind] = { list, t: Date.now() };
+      const field = { boost: "boost_rooms", super: "super_boost_rooms", acs: "super_boost_climates" }[kind];
+      Promise.resolve(this._hass.callService("tado_heating_manager", "set_boost_targets", { [field]: list })).catch(() => {
+        delete this._pick[kind];
+        this._update();
+      });
+      this._update();
+      setTimeout(() => this._update(), HS_PICK_HOLD + 100);
+    }
+
+    // temperatura sul retro: quella confermata da HA o quella appena scelta (null se l'integrazione non la espone)
+    _tempVal(field) {
+      const def = HS_TEMPS[field];
+      const st = this._st(def.id);
+      const server = hsNum(st && st.attributes[def.attr]);
+      const p = this._tpend[field];
+      if (p) {
+        if (!p.timer && (server === p.v || Date.now() - p.t > HS_PICK_HOLD)) delete this._tpend[field];
+        else return { v: p.v, wait: true };
+      }
+      return { v: server, wait: false };
+    }
+
+    _tempTap(field, d) {
+      const def = HS_TEMPS[field];
+      const cur = this._tempVal(field).v;
+      if (!this._hass || !def || cur === null || !d) return;
+      const v = Math.min(def.max, Math.max(def.min, Math.round((cur + d) * 2) / 2));
+      const p = this._tpend[field] || {};
+      clearTimeout(p.timer);
+      p.v = v;
+      p.t = Date.now();
+      p.timer = setTimeout(() => {
+        p.timer = null;
+        p.t = Date.now();
+        Promise.resolve(this._hass.callService("tado_heating_manager", "set_boost_targets", { [field]: p.v })).catch(() => {
+          delete this._tpend[field];
+          this._update();
+        });
+        setTimeout(() => this._update(), HS_PICK_HOLD + 100);
+      }, HS_TEMP_DEBOUNCE);
+      this._tpend[field] = p;
+      this._update();
+    }
+
+    _tempHtml(field, label) {
+      const def = HS_TEMPS[field];
+      const x = this._tempVal(field);
+      if (x.v === null) return "";
+      const btn = (d, icon) => `<div class="sb${(d < 0 ? x.v <= def.min : x.v >= def.max) ? " dis" : ""}" data-temp="${field}" data-d="${d}" role="button" tabindex="0" title="${d < 0 ? "Meno" : "Piu'"}"><ha-icon icon="${icon}"></ha-icon></div>`;
+      return `<div class="trow"><span>${hsEsc(label)}</span><div class="stp">${btn(-0.5, "mdi:minus")}<b class="${x.wait ? "wait" : ""}">${x.v.toFixed(1)}°</b>${btn(0.5, "mdi:plus")}</div></div>`;
+    }
+
+    _chipsHtml(kind, items, rgb) {
+      const p = this._picked(kind);
+      const html = items.map((it) => {
+        const on = p.list.includes(it.id);
+        return `<div class="chip${on ? " on" : ""}${p.wait ? " wait" : ""}" data-pick="${kind}" data-id="${hsEsc(it.id)}" role="checkbox" aria-checked="${on}" tabindex="0">
+            <ha-icon icon="${on ? "mdi:check-circle" : "mdi:circle-outline"}"></ha-icon><span>${hsEsc(it.name)}</span></div>`;
+      }).join("");
+      const n = items.filter((it) => p.list.includes(it.id)).length;
+      return { html: `<div class="chips" style="--c:${rgb}">${html}</div>`, n };
+    }
+
+    _renderBack() {
+      const st = this._st("sensor.hp_all_rooms");
+      const rooms = (st && st.attributes.rooms) || [];
+      const items = rooms.map((r) => ({ id: r.slug, name: r.name }));
+      const boost = this._chipsHtml("boost", items, "255,138,61");
+      const sup = this._chipsHtml("super", items, "171,71,188");
+      const acItems = this._acCandidates(rooms, this._picked("acs").list);
+      const acs = this._chipsHtml("acs", acItems, "171,71,188");
+      const sec = (rgb, icon, title, c, total, body) => `<div class="bsec" style="--c:${rgb}">
+          <div class="bt"><ha-icon icon="${icon}"></ha-icon><span>${title}</span><span class="cnt">${c}/${total}</span></div>${body}</div>`;
+      this._el.back.innerHTML = `
+        <div class="head"><div class="hicon"><ha-icon icon="mdi:tune-variant"></ha-icon></div>
+          <div class="htxt"><div class="title">Boost e super boost</div><div class="sub">Tocca per cambiare · vale dal prossimo avvio</div></div></div>
+        ${sec("255,138,61", "mdi:radiator", "Boost · termosifoni", boost.n, items.length,
+          boost.html + this._tempHtml("boost_temperature", "Temperatura"))}
+        ${sec("171,71,188", "mdi:rocket-launch", "Super boost · termosifoni", sup.n, items.length,
+          sup.html + this._tempHtml("super_boost_temperature", "Temperatura"))}
+        ${sec("171,71,188", "mdi:air-conditioner", "Super boost · condizionatori", acs.n, acItems.length,
+          (acItems.length ? acs.html : '<div class="bnote">Nessun condizionatore con il caldo trovato.</div>')
+          + this._tempHtml("super_boost_ac_temperature", "All'inizio")
+          + this._tempHtml("super_boost_ac_temperature_after", "Dopo"))}
+        ${acItems.length && !acs.n ? '<div class="bnote">Senza condizionatori il tasto Super boost non compare.</div>' : ""}`;
     }
 
     // "Spegni tutti": primo tocco = conferma (3 s), secondo = button.hp_all_turn_off
@@ -2123,6 +2348,18 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
         if (acts.length) foot.push(`<div class="acts">${acts.join("")}</div>`);
       }
       e.foot.innerHTML = foot.join("");
+      // tasto del retro: solo con i tasti in fondo e un'integrazione che espone le stanze del boost
+      const b = this._st(HS_BOOST_ID);
+      const canFlip = !!this._config.show_actions && !!b && Array.isArray(b.attributes.rooms);
+      if (!canFlip && this._flipped) {
+        this._flipped = false;
+        e.card.classList.remove("flipped");
+        e.card.style.minHeight = "";
+      }
+      e.flipRow.hidden = !canFlip;
+      e.flip.title = this._flipped ? "Fatto: torna al riepilogo" : "Stanze e condizionatori di boost e super boost";
+      e.flip.querySelector("ha-icon").setAttribute("icon", this._flipped ? "mdi:check" : "mdi:tune-variant");
+      if (this._flipped) this._renderBack();
     }
   }
 
