@@ -15,7 +15,7 @@
  * © 2026 ilbagatta — SPDX-License-Identifier: GPL-3.0-or-later
  * https://github.com/ilbagatta/tado_heating_manager_cards
  */
-const THM_CARDS_VERSION = "2.26.0";
+const THM_CARDS_VERSION = "2.27.0";
 // Pagina dell'integrazione (per aggiungere le stanze): navigazione interna del frontend di HA.
 const THM_CONFIG_PATH = "/config/integrations/integration/tado_heating_manager";
 const thmOpenConfig = () => {
@@ -1555,7 +1555,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
    *       show_planner: true             # facoltativo: prossimo cambio dei programmi
    *       show_quota: true               # facoltativo: barra della quota Tado (se ci sono i sensori)
    *       show_turn_off: true            # facoltativo: tasto "spegni tutti" (button.hp_all_turn_off, due tocchi)
-   *       show_actions: true             # facoltativo: tasti "Riscalda prima di rientrare", "Boost" e "Super boost"
+   *       show_actions: true             # facoltativo: tasti "Boost" e "Super boost"
    *                                      # (con il tasto in basso a destra la card si gira: stanze e condizionatori
    *                                      #  di boost e super boost, servizio set_boost_targets)
    *       exclude: [climate.xxx]         # facoltativo
@@ -1589,7 +1589,6 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
   // tasti in fondo: lo stato del pulsante e' l'ora dell'ultima pressione
   const HS_ACTIONS = [
     // short = etichetta sul tasto (tre in una riga), name = nome intero (suggerimento); rgb = colore del tasto
-    { id: "button.hp_all_preheat", name: "Riscalda prima di rientrare", short: "Preriscalda", icon: "mdi:home-thermometer", rgb: "38,166,154", anim: "bob" },
     { id: "button.hp_all_boost", name: "Boost", short: "Boost", icon: "mdi:radiator", rgb: "255,138,61", anim: "heat", active: HS_BOOST_ACTIVE, super: false },
     // super boost: anche i condizionatori; solo se l'integrazione ne ha (attributo climates del pulsante)
     { id: "button.hp_all_super_boost", name: "Super boost (termosifoni e condizionatori)", short: "Super boost", icon: "mdi:rocket-launch", rgb: "171,71,188", anim: "rocket", active: HS_BOOST_ACTIVE, super: true, needsClimates: true },
@@ -1698,7 +1697,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           { name: "exclude", selector: { entity: { domain: "climate", multiple: true } } },
         ],
         computeLabel: (s) =>
-          ({ title: "Titolo", columns: "Colonne delle stanze", show_planner: "Prossimo cambio", show_quota: "Quota Tado", show_turn_off: "Tasto spegni tutti", show_actions: "Riscalda prima / Boost", exclude: "Stanze da non mostrare" }[s.name] || s.name),
+          ({ title: "Titolo", columns: "Colonne delle stanze", show_planner: "Prossimo cambio", show_quota: "Quota Tado", show_turn_off: "Tasto spegni tutti", show_actions: "Tasti Boost / Super boost", exclude: "Stanze da non mostrare" }[s.name] || s.name),
       };
     }
 
@@ -1840,7 +1839,6 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
           .act.on .ic ha-icon { display: inline-flex; }
           .act.on.a-heat .ic ha-icon { animation: hs-flicker 1s ease-in-out infinite; transform-origin: 50% 90%; }
           .act.on.a-rocket .ic ha-icon { animation: hs-rocket .9s ease-in-out infinite; }
-          .act.on.a-bob .ic ha-icon { animation: hs-bob 1.6s ease-in-out infinite; }
           @keyframes hs-rocket {
             0%, 100% { transform: translate(0, 0) rotate(0deg); }
             20% { transform: translate(-1px, 1px) rotate(-4deg); }
@@ -1848,7 +1846,6 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
             60% { transform: translate(-1px, -1px) rotate(-2deg); }
             80% { transform: translate(1px, 1px) rotate(2deg); }
           }
-          @keyframes hs-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
           @keyframes hs-pulse { 0%, 100% { box-shadow: 0 0 0 3px rgba(var(--c), .18); } 50% { box-shadow: 0 0 0 7px rgba(var(--c), .06); } }
           .empty { position: relative; margin-top: 12px; font-size: 13px; color: var(--secondary-text-color); }
           /* tasto in basso a destra: gira la card (retro = stanze e condizionatori del boost) */
@@ -1944,7 +1941,7 @@ console.info(`%c TADO-HEATING-MANAGER-CARDS %c ${THM_CARDS_VERSION} `, "color:#f
       });
     }
 
-    // Riscalda prima / Boost: un tocco preme il pulsante dell'integrazione; sul boost in corso lo ferma
+    // Boost / Super boost: un tocco preme il pulsante dell'integrazione; sul boost in corso lo ferma
     // (stop_boost rimette termosifoni e condizionatori com'erano prima)
     _press(el) {
       if (!this._hass) return;

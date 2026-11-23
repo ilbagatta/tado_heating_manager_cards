@@ -42,7 +42,7 @@ altrimenti il file viene caricato due volte (resta attivo il primo).
 
 1. Copia `dist/tado-heating-manager-cards.js` in `/config/www/`.
 2. **Impostazioni → Dashboard → ⋮ → Risorse → Aggiungi risorsa**:
-   - URL: `/local/tado-heating-manager-cards.js?v=2.26.0`
+   - URL: `/local/tado-heating-manager-cards.js?v=2.27.0`
    - Tipo: **Modulo JavaScript**
 
    (Se il menu Risorse non si vede: attiva la *Modalita' avanzata* nel profilo utente.)
@@ -117,7 +117,7 @@ columns: 3                      # facoltativo: tessere delle stanze su 2 o 3 col
 show_planner: true              # facoltativo: prossimo cambio e stato dei programmi
 show_quota: true                # facoltativo: barra della quota (solo se ci sono i sensori)
 show_turn_off: true             # facoltativo: tasto "spegni tutti" (button.hp_all_turn_off)
-show_actions: true              # facoltativo: tasti "Riscalda prima di rientrare", "Boost" e "Super boost"
+show_actions: true              # facoltativo: tasti "Boost" e "Super boost"
 exclude:                        # facoltativo
   - climate.termo_bagno
 ```
@@ -133,11 +133,15 @@ Il tasto di spegnimento nell'intestazione (e nel popup dei programmi) spegne tut
 `button.hp_all_turn_off`: al primo tocco chiede conferma ("Spegni tutti?"), il secondo entro 3 secondi spegne.
 E' disattivato quando sono gia' tutti spenti.
 
-In fondo, i tasti **Riscalda prima di rientrare** (`button.hp_all_preheat`) e **Boost** (`button.hp_all_boost`) con
+In fondo, il tasto **Boost** (`button.hp_all_boost`) con
 l'ultima attivazione ("2 ore fa"); con il boost in corso il tasto e' arancione e mostra "fino alle …".
 Un tocco preme il pulsante; sul boost (o super boost) in corso lo **ferma** (servizio `tado_heating_manager.stop_boost`:
 termosifoni e condizionatori tornano com'erano prima della partenza). Da spenti i tasti hanno il fondo neutro, colorata solo l'icona. **Super boost** (`button.hp_all_super_boost`, integrazione aggiornata al 2026-11-22 o successiva) compare solo
-se nelle opzioni dell'integrazione sono scelti i condizionatori; i tasti stanno tutti su una riga, ognuno col suo colore ("Preriscalda" = Riscalda prima di rientrare, verde acqua; Boost arancione, Super boost viola).
+se nelle opzioni dell'integrazione sono scelti i condizionatori; i tasti stanno tutti su una riga, ognuno col suo colore (Boost arancione, Super boost viola).
+
+Il tastino in basso a destra **gira la card**: sul retro si scelgono con un tocco i termosifoni del Boost e del Super
+boost, i condizionatori del Super boost e le loro temperature (−/+), senza aprire le opzioni dell'integrazione
+(servizio `tado_heating_manager.set_boost_targets`, integrazione del 2026-11-23 o successiva). Valgono dal prossimo boost.
 
 ```yaml
 type: custom:heating-summary-editable-card
